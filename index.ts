@@ -602,86 +602,154 @@ function handleHelp(ctx: ExtensionCommandContext): void {
 async function getCompletions(
   prefix: string,
 ): Promise<AutocompleteItem[] | null> {
-  const normalized = prefix.trimStart();
-  const match = normalized.match(/^(\S+)(?:\s+(.*))?$/);
+  const tokens = prefix.split(/\s+/).filter(Boolean);
+  const trailingSpace = /\s$/.test(prefix);
+  const normalizedPrefix = tokens.join(" ").toLowerCase();
 
-  if (!match || match[2] === undefined) {
-    const subPrefix = normalized.toLowerCase();
-    const matches = SUBCOMMANDS.flatMap((cmd) =>
-      cmd.value.startsWith(subPrefix)
-        ? [{ value: cmd.value, label: cmd.label, description: cmd.description }]
-        : [],
-    );
-    return matches.length > 0 ? matches : null;
-  }
+  // N-th Token Completion (2nd or 3rd level parameters)
+  if (tokens.length > 1 || (trailingSpace && tokens.length === 1)) {
+    const cmd = tokens[0]?.toLowerCase();
 
-  const [, subcommand, argPrefix] = match;
-  const subLower = subcommand.toLowerCase();
-
-  if (subLower === "list") {
-    const filters = [
-      {
-        value: "list all",
-        label: "list all",
-        description: "Zobrazit všechny položky",
-      },
-      {
-        value: "list todo",
-        label: "list todo",
-        description: "Pouze otevřené úkoly",
-      },
-      {
-        value: "list working",
-        label: "list working",
-        description: "Rozpracované úkoly",
-      },
-      {
-        value: "list waiting",
-        label: "list waiting",
-        description: "Čekající úkoly",
-      },
-      { value: "list done", label: "list done", description: "Hotové úkoly" },
-      {
-        value: "list cancelled",
-        label: "list cancelled",
-        description: "Zrušené úkoly",
-      },
-      { value: "list idea", label: "list idea", description: "Nápady" },
-      { value: "list note", label: "list note", description: "Poznámky" },
-    ];
-    const query = (argPrefix || "").trim().toLowerCase();
-    const matches = filters.filter(
-      (f) => !query || f.value.toLowerCase().includes(query),
-    );
-    return matches.length > 0 ? matches : null;
-  }
-
-  if (subLower === "show" || subLower === "toggle") {
-    try {
-      const query = (argPrefix || "").trim().toLowerCase();
-      const index = await getOrLoadIndex(process.cwd());
-      const matches = index.records.flatMap((r) => {
-        const matchesQuery =
-          !query ||
-          r.id.toLowerCase().includes(query) ||
-          r.title.toLowerCase().includes(query);
-        return matchesQuery
-          ? [
-              {
-                value: `${subLower} ${r.id}`,
-                label: `${r.id} — ${r.title}`,
-                description: `[${r.type} - ${r.status}]`,
-              },
-            ]
-          : [];
-      });
-      return matches.length > 0 ? matches : null;
-    } catch {
-      return null;
+    // Subcommand: list
+    if (cmd === "list") {
+      const filters = [
+        {
+          value: "list all",
+          label: "list all",
+          description: "Zobrazit všechny položky v tabulce",
+        },
+        {
+          value: "list todo",
+          label: "list todo",
+          description: "Pouze otevřené úkoly",
+        },
+        {
+          value: "list working",
+          label: "list working",
+          description: "Rozpracované úkoly (in progress)",
+        },
+        {
+          value: "list waiting",
+          label: "list waiting",
+          description: "Čekající úkoly a blokátory",
+        },
+        {
+          value: "list done",
+          label: "list done",
+          description: "Dokončené úkoly",
+        },
+        {
+          value: "list cancelled",
+          label: "list cancelled",
+          description: "Zrušené úkoly",
+        },
+        {
+          value: "list idea",
+          label: "list idea",
+          description: "Nápady a koncepty",
+        },
+        {
+          value: "list note",
+          label: "list note",
+          description: "Poznámky a zjištěná fakta",
+        },
+        {
+          value: "list board",
+          label: "list board",
+          description: "Interaktivní Kanban tabule",
+        },
+      ];
+      const filtered = filters.filter((i) =>
+        i.value.toLowerCase().startsWith(normalizedPrefix),
+      );
+      return filtered.length > 0 ? filtered : null;
     }
+
+    // Subcommand: show
+    if (cmd === "show") {
+      try {
+        const index = await getOrLoadIndex(process.cwd());
+        const query = (tokens[1] || "").toLowerCase();
+        const items = index.records
+          .filter(
+            (r) =>
+              !query ||
+              r.id.toLowerCase().includes(query) ||
+              r.title.toLowerCase().includes(query),
+          )
+          .map((r) => ({
+            value: `show ${r.id}`,
+            label: `${r.id} — ${r.title}`,
+            description: `[${r.type} - ${r.status}]`,
+          }));
+        const filtered = items.filter((i) =>
+          i.value.toLowerCase().startsWith(normalizedPrefix),
+        );
+        return filtered.length > 0 ? filtered : null;
+      } catch {
+        return null;
+      }
+    }
+
+    // Subcommand: toggle
+    if (cmd === "toggle") {
+      if (tokens.length === 2 && !trailingSpace) {
+        try {
+          const index = await getOrLoadIndex(process.cwd());
+          const query = tokens[1].toLowerCase();
+          const items = index.records.map((r) => ({
+            value: `toggle ${r.id}`,
+            label: `${r.id} — ${r.title}`,
+            description: `[${r.type} - ${r.status}]`,
+          }));
+          const filtered = items.filter(
+            (i) =>
+              i.value.toLowerCase().startsWith(normalizedPrefix) ||
+              i.label.toLowerCase().includes(query),
+          );
+          return filtered.length > 0 ? filtered : null;
+        } catch {
+          return null;
+        }
+      }
+
+      if (tokens.length > 2 || (tokens.length === 2 && trailingSpace)) {
+        const id = tokens[1];
+        const statuses = [
+          "todo",
+          "working",
+          "waiting",
+          "done",
+          "cancelled",
+          "idea",
+          "note",
+        ];
+        const items = statuses.map((st) => ({
+          value: `toggle ${id} ${st}`,
+          label: `toggle ${id} ${st}`,
+          description: `Nastavit stav položky na "${st}"`,
+        }));
+        const filtered = items.filter((i) =>
+          i.value.toLowerCase().startsWith(normalizedPrefix),
+        );
+        return filtered.length > 0 ? filtered : null;
+      }
+    }
+
+    return null;
   }
 
-  return null;
+  // 1st Token Completion (Subcommands)
+  const typed = (tokens[0] ?? "").toLowerCase();
+  const items = SUBCOMMANDS.filter((cmd) =>
+    cmd.value.toLowerCase().startsWith(typed),
+  ).map((cmd) => ({
+    value: cmd.value,
+    label: cmd.label,
+    description: cmd.description,
+  }));
+
+  return items.length > 0 ? items : null;
 }
 
 function registerTools(pi: ExtensionAPI): void {
