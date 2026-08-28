@@ -14,6 +14,7 @@ import type {
 } from "./types.js";
 import {
   coralGlow,
+  cyanGlow,
   defaultBold,
   dividerGlow,
   goldGlow,
@@ -81,6 +82,17 @@ function padToWidth(text: string, width: number): string {
     return truncateToWidth(text, width, "…");
   }
   return text + " ".repeat(Math.max(0, width - vWidth));
+}
+
+function computeColWidths(totalWidth: number, numCols: number): number[] {
+  const available = Math.max(numCols * 12, totalWidth - 2 - (numCols - 1));
+  const base = Math.floor(available / numCols);
+  const remainder = available % numCols;
+  const widths: number[] = [];
+  for (let i = 0; i < numCols; i++) {
+    widths.push(base + (i < remainder ? 1 : 0));
+  }
+  return widths;
 }
 
 export class KanbanBoardComponent implements Component {
@@ -301,42 +313,84 @@ export class KanbanBoardComponent implements Component {
     const lines: string[] = [];
     const maxRows = 10;
     const numCols = KANBAN_COLUMNS.length;
-    const colWidth = Math.max(
-      16,
-      Math.floor((width - (numCols - 1)) / numCols),
+    const colWidths = computeColWidths(width, numCols);
+
+    const innerWidth = width - 2; // inside left/right border
+    const border = (s: string) => dividerGlow(s);
+
+    // 1. Top Outer Frame
+    lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
+
+    // 2. Title & Live Stats Banner
+    const totalRecords = this.index.records.length;
+    const activeTasks = this.index.records.filter(
+      (r) => r.status === "todo" || r.status === "working",
+    ).length;
+    const doneTasks = this.index.records.filter(
+      (r) => r.status === "done",
+    ).length;
+
+    const titleLeft = defaultBold(pinkGlow(" ◈ SPAI KANBAN BOARD ◈"));
+    const statsRight = `${goldGlow(`⚡ ${activeTasks} aktivních`)}  ${greenGlow(`✓ ${doneTasks} hotovo`)}  ${violetGlow(`Σ ${totalRecords} položek`)} `;
+    const bannerSpaces = Math.max(
+      1,
+      innerWidth - visibleWidth(titleLeft) - visibleWidth(statsRight),
+    );
+    lines.push(
+      border("│") +
+        truncateToWidth(
+          `${titleLeft}${" ".repeat(bannerSpaces)}${statsRight}`,
+          innerWidth,
+        ) +
+        border("│"),
     );
 
-    // Header title bar
-    const titleBar = defaultBold(pinkGlow("◈ SPAI KANBAN BOARD ◈"));
-    const hintBar = violetGlow(
-      "←→: sloupec • ↑↓: úkol • 1-5: přesun • Space: rotace (smyčka) • enter: detail • esc: zavřít",
+    // 3. Compact Hints / Hotkeys Line
+    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: skok stavu  ${cyanGlow("Space")}: rotace  ${cyanGlow("n")}: nový  ${cyanGlow("enter")}: detail  ${cyanGlow("esc")}: zavřít`;
+    lines.push(
+      border("│") + padToWidth(hintText, innerWidth) + border("│"),
     );
-    lines.push(truncateToWidth(`  ${titleBar}  ${hintBar}`, width));
-    lines.push(dividerGlow("━".repeat(width)));
 
-    // Column Headers
+    // 4. Header Top Grid Border
+    const headerTopSep = colWidths.map((w) => "─".repeat(w)).join("┬");
+    lines.push(border(`├${headerTopSep}┤`));
+
+    // 5. Column Headers
     const headerSegments: string[] = [];
     for (let c = 0; c < numCols; c++) {
       const col = KANBAN_COLUMNS[c];
+      const w = colWidths[c] ?? 16;
       if (!col) continue;
       const tasks = this.getColumnTasks(col.status);
       const isFocused = this.focusCol === c;
-      const title = `${col.glyph} ${col.label} (${tasks.length})`;
-      const rawHeader = isFocused
-        ? defaultBold(col.colorFn(`▶ ${title}`))
-        : col.colorFn(`  ${title}`);
-      headerSegments.push(padToWidth(rawHeader, colWidth));
-    }
-    lines.push(headerSegments.join(dividerGlow("│")));
-    lines.push(dividerGlow("─".repeat(width)));
 
-    // Column Task Rows
+      const badge = `[${col.shortcut}]`;
+      const countStr = `(${tasks.length})`;
+
+      let headerStr: string;
+      if (isFocused) {
+        const titleText = `${col.glyph} ${col.label} ${badge} ${countStr}`;
+        headerStr = defaultBold(col.colorFn(` ▶ ${titleText}`));
+      } else {
+        const titleText = `${col.glyph} ${col.label} ${badge} ${countStr}`;
+        headerStr = col.colorFn(`   ${titleText}`);
+      }
+      headerSegments.push(padToWidth(headerStr, w));
+    }
+    lines.push(border("│") + headerSegments.join(border("│")) + border("│"));
+
+    // 6. Header Bottom Grid Border
+    const headerBottomSep = colWidths.map((w) => "─".repeat(w)).join("┼");
+    lines.push(border(`├${headerBottomSep}┤`));
+
+    // 7. Column Task Rows
     for (let r = 0; r < maxRows; r++) {
       const rowSegments: string[] = [];
       for (let c = 0; c < numCols; c++) {
         const col = KANBAN_COLUMNS[c];
+        const w = colWidths[c] ?? 16;
         if (!col) {
-          rowSegments.push(" ".repeat(colWidth));
+          rowSegments.push(" ".repeat(w));
           continue;
         }
         const tasks = this.getColumnTasks(col.status);
@@ -347,14 +401,14 @@ export class KanbanBoardComponent implements Component {
         if (task) {
           const prioMark = task.priority === "high" ? "⚡" : "";
           const id = task.id.replace(/^SPAI-0*/i, "#");
-          const availWidth = Math.max(8, colWidth - 4);
+          const availWidth = Math.max(8, w - 3);
           const rawContent = `${id} ${task.title}${prioMark ? " " + prioMark : ""}`;
           const truncatedContent = truncateToWidth(rawContent, availWidth, "…");
 
           let cellText: string;
           if (isSelected) {
             const highlighted = `${col.bgColorAnsi} \x1b[1m${truncatedContent}\x1b[0m`;
-            cellText = `▸ ${highlighted}`;
+            cellText = ` ▸${highlighted}`;
           } else {
             const styledId = col.colorFn(id);
             const displayTitle = task.title.slice(
@@ -362,22 +416,61 @@ export class KanbanBoardComponent implements Component {
               Math.max(4, availWidth - id.length - 1),
             );
             const styledPrio = prioMark ? coralGlow(` ${prioMark}`) : "";
-            cellText = `  ${styledId} ${displayTitle}${styledPrio}`;
+            cellText = `   ${styledId} ${displayTitle}${styledPrio}`;
           }
-          rowSegments.push(padToWidth(cellText, colWidth));
+          rowSegments.push(padToWidth(cellText, w));
         } else if (r === 0 && tasks.length === 0) {
           const emptyText = isFocused
-            ? col.colorFn("  (prázdné)")
-            : dividerGlow("  —");
-          rowSegments.push(padToWidth(emptyText, colWidth));
+            ? col.colorFn("   · prázdné ·")
+            : dividerGlow("   · — ·");
+          rowSegments.push(padToWidth(emptyText, w));
         } else {
-          rowSegments.push(" ".repeat(colWidth));
+          rowSegments.push(" ".repeat(w));
         }
       }
-      lines.push(rowSegments.join(dividerGlow("│")));
+      lines.push(border("│") + rowSegments.join(border("│")) + border("│"));
     }
 
-    lines.push(dividerGlow("━".repeat(width)));
+    // 8. Grid Bottom Border
+    const gridBottomSep = colWidths.map((w) => "─".repeat(w)).join("┴");
+    lines.push(border(`├${gridBottomSep}┤`));
+
+    // 9. Active Task Inspector Footer
+    const selectedTask = this.getSelectedRecord();
+    let footerDetail: string;
+    if (selectedTask) {
+      const idStr = pinkGlow(selectedTask.id);
+      const titleStr = defaultBold(selectedTask.title);
+      const statusBadge = colBadge(selectedTask.status);
+      const prioStr =
+        selectedTask.priority === "high"
+          ? coralGlow(" ⚡ VYSOKÁ")
+          : selectedTask.priority === "low"
+            ? slateGlow(" ▽ NÍZKÁ")
+            : "";
+      const deadStr = selectedTask.deadline
+        ? goldGlow(` ⏰ ${selectedTask.deadline}`)
+        : "";
+      const tagsStr =
+        selectedTask.tags.length > 0
+          ? violetGlow(` :${selectedTask.tags.join(":")}:`)
+          : "";
+
+      footerDetail = ` ▶ ${idStr} ${titleStr} ${statusBadge}${prioStr}${deadStr}${tagsStr}`;
+    } else {
+      const activeCol = KANBAN_COLUMNS[this.focusCol];
+      const colName = activeCol?.label ?? "SLOUPEC";
+      footerDetail = violetGlow(
+        `   Sloupec ${colName} je prázdný — stiskni [n] pro přidání nového úkolu.`,
+      );
+    }
+    lines.push(
+      border("│") + padToWidth(footerDetail, innerWidth) + border("│"),
+    );
+
+    // 10. Bottom Outer Frame
+    lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
+
     this.cachedWidth = width;
     this.cachedLines = lines;
     return lines;
@@ -387,4 +480,10 @@ export class KanbanBoardComponent implements Component {
     this.cachedWidth = undefined;
     this.cachedLines = undefined;
   }
+}
+
+function colBadge(status: SpaiStatus): string {
+  const col = KANBAN_COLUMNS.find((c) => c.status === status);
+  if (!col) return status;
+  return col.colorFn(`[${col.glyph} ${col.label}]`);
 }
