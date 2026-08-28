@@ -16,6 +16,7 @@ import {
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
+  cycleNextStatus,
   matchSpaiPrefix,
   parseInlineMeta,
   parseSpai,
@@ -157,7 +158,7 @@ async function openReaderView(
       container.addChild(
         new Text(
           violetGlow(
-            "m: přepnout formátování • x: přepnout stav úkolu • esc: zavřít",
+            "m: formátování • x/mezerník: přepnout stav (cyklus) • s: vybrat stav • esc: zavřít",
           ),
           1,
           0,
@@ -180,8 +181,10 @@ async function openReaderView(
           rebuild();
           tui.requestRender();
         } else if (matchesKey(data, "x") || matchesKey(data, Key.space)) {
-          const nextStatus: SpaiStatus =
-            currentRecord.status === "done" ? "todo" : "done";
+          const nextStatus = cycleNextStatus(
+            currentRecord.status,
+            currentRecord.type,
+          );
           const updated = await updateRecordStatus(
             ctx.cwd,
             currentRecord.id,
@@ -192,6 +195,40 @@ async function openReaderView(
             invalidateCache();
             rebuild();
             tui.requestRender();
+          }
+        } else if (matchesKey(data, "s")) {
+          const statuses: SpaiStatus[] = [
+            "todo",
+            "working",
+            "waiting",
+            "done",
+            "cancelled",
+            "idea",
+            "note",
+          ];
+          const choices = statuses.map(
+            (st) => `${st} — ${renderSpaiStatusBadge(st)}`,
+          );
+          const picked = await ctx.ui.select(
+            `Zvolte stav pro ${currentRecord.id}:`,
+            choices,
+          );
+          if (picked) {
+            const pickedIdx = choices.indexOf(picked);
+            const chosenStatus = pickedIdx !== -1 ? statuses[pickedIdx] : undefined;
+            if (chosenStatus) {
+              const updated = await updateRecordStatus(
+                ctx.cwd,
+                currentRecord.id,
+                chosenStatus,
+              );
+              if (updated) {
+                currentRecord = updated;
+                invalidateCache();
+                rebuild();
+                tui.requestRender();
+              }
+            }
           }
         } else if (matchesKey(data, Key.escape) || matchesKey(data, "q")) {
           done();
@@ -240,8 +277,7 @@ async function openDirectoryExplorer(
         const items: SelectItem[] = displayedRecords.map((r) => {
           const statusBadge = renderSpaiStatusBadge(r.status);
           const typeBadge = renderSpaiTypeBadge(r.type);
-          const tagsStr =
-            r.tags.length > 0 ? ` :${r.tags.join(":")}:` : "";
+          const tagsStr = r.tags.length > 0 ? ` :${r.tags.join(":")}:` : "";
           const prioStr = r.priority === "high" ? " ⚡" : "";
           const deadStr = r.deadline ? ` ⏰ ${r.deadline}` : "";
           return {
@@ -251,17 +287,13 @@ async function openDirectoryExplorer(
           };
         });
 
-        const selectList = new SelectList(
-          items,
-          Math.min(items.length, 12),
-          {
-            selectedPrefix: (t) => pinkGlow(t),
-            selectedText: (t) => pinkGlow(theme.bold(t)),
-            description: (t) => violetGlow(t),
-            scrollInfo: (t) => dividerGlow(t),
-            noMatch: (t) => goldGlow(t),
-          },
-        );
+        const selectList = new SelectList(items, Math.min(items.length, 12), {
+          selectedPrefix: (t) => pinkGlow(t),
+          selectedText: (t) => pinkGlow(theme.bold(t)),
+          description: (t) => violetGlow(t),
+          scrollInfo: (t) => dividerGlow(t),
+          noMatch: (t) => goldGlow(t),
+        });
 
         selectList.onSelect = (item) => done(item.value);
         selectList.onCancel = () => done(null);
@@ -309,6 +341,9 @@ async function handleList(
   else if (arg === "done") statusFilter = "done";
   else if (arg === "working") statusFilter = "working";
   else if (arg === "waiting") statusFilter = "waiting";
+  else if (arg === "cancelled") statusFilter = "cancelled";
+  else if (arg === "idea") statusFilter = "idea";
+  else if (arg === "note") statusFilter = "note";
 
   await openDirectoryExplorer(ctx, statusFilter);
 }
@@ -368,9 +403,15 @@ async function handleToggle(
   remainder: string,
   ctx: ExtensionCommandContext,
 ): Promise<void> {
-  const id = remainder.trim();
+  const tokens = remainder.trim().split(/\s+/).filter(Boolean);
+  const id = tokens[0];
+  const explicitStatus = tokens[1]?.toLowerCase() as SpaiStatus | undefined;
+
   if (!id) {
-    ctx.ui.notify("Použití: `/spai toggle <id>` (např. `/spai toggle SPAI-001`)", "warning");
+    ctx.ui.notify(
+      "Použití: `/spai toggle <id> [todo|working|waiting|done|cancelled|idea|note]` (např. `/spai toggle SPAI-001 done`)",
+      "warning",
+    );
     return;
   }
 
@@ -380,17 +421,28 @@ async function handleToggle(
     return;
   }
 
-  let nextStatus: SpaiStatus = "todo";
-  if (record.status === "todo") nextStatus = "working";
-  else if (record.status === "working") nextStatus = "done";
-  else if (record.status === "done") nextStatus = "todo";
-  else if (record.status === "waiting") nextStatus = "working";
+  const validStatuses = [
+    "todo",
+    "working",
+    "waiting",
+    "done",
+    "cancelled",
+    "idea",
+    "note",
+  ];
+  const nextStatus: SpaiStatus =
+    explicitStatus && validStatuses.includes(explicitStatus)
+      ? explicitStatus
+      : cycleNextStatus(record.status, record.type);
 
   const updated = await updateRecordStatus(ctx.cwd, record.id, nextStatus);
   invalidateCache();
 
   if (updated) {
-    ctx.ui.notify(`Stav ${updated.id} změněn na: ${renderSpaiStatusBadge(updated.status)}`, "info");
+    ctx.ui.notify(
+      `Stav ${updated.id} změněn na: ${renderSpaiStatusBadge(updated.status)}`,
+      "info",
+    );
   }
 }
 
@@ -507,16 +559,39 @@ async function getCompletions(
 
   if (subLower === "list") {
     const filters = [
-      { value: "list all", label: "list all", description: "Zobrazit všechny položky" },
-      { value: "list todo", label: "list todo", description: "Pouze otevřené úkoly" },
-      { value: "list working", label: "list working", description: "Rozpracované úkoly" },
-      { value: "list waiting", label: "list waiting", description: "Čekající úkoly" },
+      {
+        value: "list all",
+        label: "list all",
+        description: "Zobrazit všechny položky",
+      },
+      {
+        value: "list todo",
+        label: "list todo",
+        description: "Pouze otevřené úkoly",
+      },
+      {
+        value: "list working",
+        label: "list working",
+        description: "Rozpracované úkoly",
+      },
+      {
+        value: "list waiting",
+        label: "list waiting",
+        description: "Čekající úkoly",
+      },
       { value: "list done", label: "list done", description: "Hotové úkoly" },
+      {
+        value: "list cancelled",
+        label: "list cancelled",
+        description: "Zrušené úkoly",
+      },
       { value: "list idea", label: "list idea", description: "Nápady" },
       { value: "list note", label: "list note", description: "Poznámky" },
     ];
     const query = (argPrefix || "").trim().toLowerCase();
-    const matches = filters.filter((f) => !query || f.value.toLowerCase().includes(query));
+    const matches = filters.filter(
+      (f) => !query || f.value.toLowerCase().includes(query),
+    );
     return matches.length > 0 ? matches : null;
   }
 
@@ -554,7 +629,8 @@ function registerTools(pi: ExtensionAPI): void {
     label: "Record SPAI Item",
     description:
       "Zaznamenat úkol (. ), nápad (? ) nebo poznámku (- ) v docs/spai/ s plnou podporou SPAI syntaxe.",
-    promptSnippet: "Zaznamenat projektový úkol, nápad nebo poznámku do docs/spai/",
+    promptSnippet:
+      "Zaznamenat projektový úkol, nápad nebo poznámku do docs/spai/",
     promptGuidelines: [
       "Use record_spai_item when the user wants to record a task (. ), idea (? ), or note (- ) in the project backlog.",
     ],
@@ -585,7 +661,8 @@ function registerTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "search_spai_items",
     label: "Search SPAI Items",
-    description: "Vyhledávat v projektových úkolech, nápadech a poznámkách v docs/spai/.",
+    description:
+      "Vyhledávat v projektových úkolech, nápadech a poznámkách v docs/spai/.",
     promptSnippet: "Vyhledávat v projektovém backlogu docs/spai/",
     promptGuidelines: [
       "Use search_spai_items when searching for project tasks, ideas, or notes in docs/spai/.",
@@ -594,7 +671,8 @@ function registerTools(pi: ExtensionAPI): void {
       query: Type.String({ description: "Hledaný text, tag nebo ID" }),
       status: Type.Optional(
         Type.String({
-          description: "Volitelný filtr stavu ('todo', 'working', 'waiting', 'done', 'idea', 'note')",
+          description:
+            "Volitelný filtr stavu ('todo', 'working', 'waiting', 'done', 'idea', 'note')",
         }),
       ),
     }),
@@ -618,7 +696,9 @@ function registerTools(pi: ExtensionAPI): void {
 
       const lines = [`Nalezeno ${results.length} SPAI položek:`];
       for (const m of results) {
-        lines.push(`- [${m.id}] [${m.type} - ${m.status}] (${m.timestamp}): ${m.title}`);
+        lines.push(
+          `- [${m.id}] [${m.type} - ${m.status}] (${m.timestamp}): ${m.title}`,
+        );
       }
 
       return {

@@ -7,13 +7,12 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
-  matchSpaiPrefix,
   parseInlineMeta,
   parseSpai,
   parseSubtasks,
-  stripSpaiPrefix,
+  updateBodyStatusPrefix,
 } from "./spai.js";
 import type {
   SearchMatch,
@@ -26,10 +25,7 @@ import type {
 } from "./types.js";
 
 export const DEFAULT_SPAI_DIR = join("docs", "spai");
-export const CANDIDATE_SPAI_DIRS = [
-  join("docs", "spai"),
-  join(".pi", "spai"),
-];
+export const CANDIDATE_SPAI_DIRS = [join("docs", "spai"), join(".pi", "spai")];
 const INDEX_FILENAME = ".index.json";
 
 export const PROJECT_ROOT_MARKERS = [
@@ -107,7 +103,12 @@ export function slugify(text: string): string {
 
 export function formatDateTime(dateInput?: string | Date): string {
   const pad = (n: number) => n.toString().padStart(2, "0");
-  const d = dateInput instanceof Date ? dateInput : dateInput ? new Date(dateInput) : new Date();
+  const d =
+    dateInput instanceof Date
+      ? dateInput
+      : dateInput
+        ? new Date(dateInput)
+        : new Date();
   if (Number.isNaN(d.getTime())) {
     return formatDateTime(new Date());
   }
@@ -147,8 +148,10 @@ export function formatSpaiMarkdown(record: SpaiRecord): string {
 
   if (record.priority || record.deadline || record.project) {
     frontmatterLines.push("facets:");
-    if (record.priority) frontmatterLines.push(`  priority: ${record.priority}`);
-    if (record.deadline) frontmatterLines.push(`  deadline: ${record.deadline}`);
+    if (record.priority)
+      frontmatterLines.push(`  priority: ${record.priority}`);
+    if (record.deadline)
+      frontmatterLines.push(`  deadline: ${record.deadline}`);
     if (record.project) frontmatterLines.push(`  project: ${record.project}`);
   }
 
@@ -165,7 +168,10 @@ export function formatSpaiMarkdown(record: SpaiRecord): string {
 /**
  * Parses markdown file with optional YAML frontmatter into a SpaiRecord.
  */
-export function parseSpaiMarkdown(content: string, fileName = ""): SpaiRecord | null {
+export function parseSpaiMarkdown(
+  content: string,
+  fileName = "",
+): SpaiRecord | null {
   let yamlRaw = "";
   let body = content;
 
@@ -179,7 +185,8 @@ export function parseSpaiMarkdown(content: string, fileName = ""): SpaiRecord | 
   }
 
   // Extract ID and Title from header
-  const titleMatch = body.match(/^#\s*(SPAI-\d+)?:\s*(.+)$/m) || body.match(/^#\s*(.+)$/m);
+  const titleMatch =
+    body.match(/^#\s*(SPAI-\d+)?:\s*(.+)$/m) || body.match(/^#\s*(.+)$/m);
   let id = "SPAI-001";
   let title = "Bez názvu";
 
@@ -215,7 +222,10 @@ export function parseSpaiMarkdown(content: string, fileName = ""): SpaiRecord | 
 
     const tagsM = yamlRaw.match(/^tags:\s*\[(.*)\]/m);
     if (tagsM) {
-      const parsedTags = tagsM[1].split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      const parsedTags = tagsM[1]
+        .split(",")
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
       for (const pt of parsedTags) {
         if (!tags.includes(pt)) tags.push(pt);
       }
@@ -250,7 +260,10 @@ export function parseSpaiMarkdown(content: string, fileName = ""): SpaiRecord | 
   };
 }
 
-export async function rebuildIndex(cwd: string, dirOverride?: string): Promise<SpaiIndex> {
+export async function rebuildIndex(
+  cwd: string,
+  dirOverride?: string,
+): Promise<SpaiIndex> {
   const dir = await ensureSpaiDir(cwd, dirOverride);
   const entries: SpaiIndexEntry[] = [];
 
@@ -302,7 +315,10 @@ export async function rebuildIndex(cwd: string, dirOverride?: string): Promise<S
   return index;
 }
 
-export async function loadIndex(cwd: string, dirOverride?: string): Promise<SpaiIndex> {
+export async function loadIndex(
+  cwd: string,
+  dirOverride?: string,
+): Promise<SpaiIndex> {
   const indexPath = getIndexPath(cwd, dirOverride);
   try {
     const raw = await readFile(indexPath, "utf8");
@@ -428,6 +444,20 @@ export async function updateRecordStatus(
   if (!record) return null;
 
   record.status = nextStatus;
+  const { body: updatedBody, symbol } = updateBodyStatusPrefix(
+    record.body,
+    nextStatus,
+  );
+  record.body = updatedBody;
+  record.symbol = symbol;
+
+  if (
+    record.type === "Idea" &&
+    (nextStatus === "todo" || nextStatus === "working")
+  ) {
+    record.type = "Todo";
+  }
+
   const updatedMarkdown = formatSpaiMarkdown(record);
   const dir = getSpaiDir(cwd, dirOverride);
   const filePath = join(dir, record.file);
@@ -437,6 +467,8 @@ export async function updateRecordStatus(
   const entry = index.records.find((r) => r.id === record.id);
   if (entry) {
     entry.status = nextStatus;
+    entry.symbol = symbol;
+    entry.type = record.type;
     index.lastUpdated = formatDateTime();
     const indexPath = getIndexPath(cwd, dirOverride);
     await atomicWriteFile(indexPath, JSON.stringify(index, null, 2) + "\n");
@@ -469,7 +501,8 @@ export async function searchRecords(
       continue;
     }
 
-    const searchable = `${entry.id} ${entry.title} ${entry.type} ${entry.status} ${entry.tags.join(" ")}`.toLowerCase();
+    const searchable =
+      `${entry.id} ${entry.title} ${entry.type} ${entry.status} ${entry.tags.join(" ")}`.toLowerCase();
     let score = 0;
 
     for (const term of terms) {

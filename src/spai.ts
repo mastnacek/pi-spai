@@ -11,16 +11,50 @@ import type {
  * Standard SPAI Prefix Table in exact order of precedence.
  */
 export const SPAI_PREFIXES: SpaiPrefixDef[] = [
-  { prefix: "/. ", marker: "/.", symbol: "/.", type: "Todo", status: "waiting" },
-  { prefix: ". ", marker: ".", symbol: ".", type: "Todo", status: "todo", isDefault: true },
+  {
+    prefix: "/. ",
+    marker: "/.",
+    symbol: "/.",
+    type: "Todo",
+    status: "waiting",
+  },
+  {
+    prefix: ". ",
+    marker: ".",
+    symbol: ".",
+    type: "Todo",
+    status: "todo",
+    isDefault: true,
+  },
   { prefix: "/ ", marker: "/", symbol: "/", type: "Todo", status: "working" },
   { prefix: "x ", marker: "x", symbol: "x", type: "Todo", status: "done" },
   { prefix: "X ", marker: "X", symbol: "x", type: "Todo", status: "done" },
   { prefix: "z ", marker: "z", symbol: "z", type: "Todo", status: "cancelled" },
   { prefix: "Z ", marker: "Z", symbol: "z", type: "Todo", status: "cancelled" },
-  { prefix: "- ", marker: "-", symbol: "-", type: "Note", status: "note", isDefault: true },
-  { prefix: "? ", marker: "?", symbol: "?", type: "Idea", status: "idea", isDefault: true },
-  { prefix: "# ", marker: "#", symbol: "", type: "Note", status: "inbox", titleOnly: true },
+  {
+    prefix: "- ",
+    marker: "-",
+    symbol: "-",
+    type: "Note",
+    status: "note",
+    isDefault: true,
+  },
+  {
+    prefix: "? ",
+    marker: "?",
+    symbol: "?",
+    type: "Idea",
+    status: "idea",
+    isDefault: true,
+  },
+  {
+    prefix: "# ",
+    marker: "#",
+    symbol: "",
+    type: "Note",
+    status: "inbox",
+    titleOnly: true,
+  },
 ];
 
 export const NO_PREFIX_DEF: SpaiPrefixDef = {
@@ -57,17 +91,23 @@ export function stripSpaiPrefix(line: string): string {
 /**
  * Extracts chained inline tags :tag1:tag2: from text.
  */
-export function extractInlineTags(text: string): { tags: string[]; cleanText: string } {
+export function extractInlineTags(text: string): {
+  tags: string[];
+  cleanText: string;
+} {
   const tags: string[] = [];
-  const tagBlockRe = /(?:^|\s):([A-Za-z0-9_./-]+(?::[A-Za-z0-9_./-]+)*):(?:\s|$)/g;
+  const tagBlockRe =
+    /(?:^|\s):([A-Za-z0-9_./-]+(?::[A-Za-z0-9_./-]+)*):(?:\s|$)/g;
 
-  const cleanText = text.replace(tagBlockRe, (_m, tagChain: string) => {
-    const split = tagChain.split(":").filter(Boolean);
-    for (const t of split) {
-      tags.push(t.toLowerCase());
-    }
-    return " ";
-  }).trim();
+  const cleanText = text
+    .replace(tagBlockRe, (_m, tagChain: string) => {
+      const split = tagChain.split(":").filter(Boolean);
+      for (const t of split) {
+        tags.push(t.toLowerCase());
+      }
+      return " ";
+    })
+    .trim();
 
   return { tags: Array.from(new Set(tags)), cleanText };
 }
@@ -75,7 +115,10 @@ export function extractInlineTags(text: string): { tags: string[]; cleanText: st
 /**
  * Extracts priority mark `!` from text (at start or inline).
  */
-export function extractPriority(text: string): { priority?: SpaiPriority; cleanText: string } {
+export function extractPriority(text: string): {
+  priority?: SpaiPriority;
+  cleanText: string;
+} {
   const prioRe = /(?:^|\s)!(?:\s|$)/;
   if (prioRe.test(text)) {
     return {
@@ -89,8 +132,12 @@ export function extractPriority(text: string): { priority?: SpaiPriority; cleanT
 /**
  * Extracts deadline `@YYYY-MM-DD` or `@DD.MM.` from text.
  */
-export function extractDeadline(text: string): { deadline?: string; cleanText: string } {
-  const deadlineRe = /(?:^|\s)@(?:(\d{4}-\d{2}-\d{2})|(\d{1,2}\.\d{1,2}\.(?:\d{4})?))(?:\s|$)/;
+export function extractDeadline(text: string): {
+  deadline?: string;
+  cleanText: string;
+} {
+  const deadlineRe =
+    /(?:^|\s)@(?:(\d{4}-\d{2}-\d{2})|(\d{1,2}\.\d{1,2}\.(?:\d{4})?))(?:\s|$)/;
   const match = text.match(deadlineRe);
   if (match) {
     let dateStr = match[1] || match[2];
@@ -152,11 +199,14 @@ export function parseSpai(
   const prefixMatch = matchSpaiPrefix(rawFirstLine);
 
   const noteType: SpaiNoteType = manualType || prefixMatch?.type || "Note";
-  const status: SpaiStatus = prefixMatch?.status || (noteType === "Todo" ? "todo" : "note");
+  const status: SpaiStatus =
+    prefixMatch?.status || (noteType === "Todo" ? "todo" : "note");
   const symbol = prefixMatch?.symbol ?? "";
 
   // Title extraction
-  let title = prefixMatch ? rawFirstLine.slice(prefixMatch.prefix.length).trim() : rawFirstLine.trim();
+  let title = prefixMatch
+    ? rawFirstLine.slice(prefixMatch.prefix.length).trim()
+    : rawFirstLine.trim();
   if (title.startsWith("# ")) {
     title = title.slice(2).trim();
   }
@@ -182,7 +232,12 @@ export function parseSubtasks(text: string): Subtask[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
     const prefix = matchSpaiPrefix(line.trimStart());
-    if (prefix && (prefix.type === "Todo" || prefix.status === "done" || prefix.status === "working")) {
+    if (
+      prefix &&
+      (prefix.type === "Todo" ||
+        prefix.status === "done" ||
+        prefix.status === "working")
+    ) {
       subtasks.push({
         lineIndex: i,
         status: prefix.status,
@@ -263,4 +318,96 @@ export function formatSpaiLine(line: string): string {
   }
 
   return line;
+}
+
+/**
+ * Gets the standard prefix string and symbol for a given SPAI status.
+ */
+export function getStatusPrefix(
+  status: SpaiStatus,
+): { prefix: string; symbol: string } {
+  switch (status) {
+    case "working":
+      return { prefix: "/ ", symbol: "/" };
+    case "waiting":
+      return { prefix: "/. ", symbol: "/." };
+    case "done":
+      return { prefix: "x ", symbol: "x" };
+    case "cancelled":
+      return { prefix: "z ", symbol: "z" };
+    case "idea":
+      return { prefix: "? ", symbol: "?" };
+    case "note":
+      return { prefix: "- ", symbol: "-" };
+    case "todo":
+    default:
+      return { prefix: ". ", symbol: "." };
+  }
+}
+
+/**
+ * Cycles through the complete SPAI status loop.
+ */
+export function cycleNextStatus(
+  current: SpaiStatus,
+  type: SpaiNoteType = "Todo",
+): SpaiStatus {
+  if (type === "Idea") {
+    if (current === "idea") return "todo";
+    if (current === "todo") return "working";
+    if (current === "working") return "waiting";
+    if (current === "waiting") return "done";
+    if (current === "done") return "cancelled";
+    return "idea";
+  }
+
+  if (type === "Note") {
+    if (current === "note") return "todo";
+    if (current === "todo") return "done";
+    return "note";
+  }
+
+  // Full Todo loop: todo (○) ➔ working (◐) ➔ waiting (⏳) ➔ done (✓) ➔ cancelled (✗) ➔ todo (○)
+  switch (current) {
+    case "todo":
+      return "working";
+    case "working":
+      return "waiting";
+    case "waiting":
+      return "done";
+    case "done":
+      return "cancelled";
+    case "cancelled":
+    default:
+      return "todo";
+  }
+}
+
+/**
+ * Updates the leading SPAI status prefix on the first non-empty line of markdown text.
+ */
+export function updateBodyStatusPrefix(
+  body: string,
+  newStatus: SpaiStatus,
+): { body: string; symbol: string } {
+  const { prefix: newPrefix, symbol } = getStatusPrefix(newStatus);
+  const lines = body.split("\n");
+  const firstTextIdx = lines.findIndex((l) => l.trim().length > 0);
+
+  if (firstTextIdx !== -1) {
+    const rawLine = lines[firstTextIdx] ?? "";
+    const trimmed = rawLine.trimStart();
+    const indent = rawLine.slice(0, rawLine.length - trimmed.length);
+    const existingPrefix = matchSpaiPrefix(trimmed);
+
+    if (existingPrefix) {
+      const rest = trimmed.slice(existingPrefix.prefix.length);
+      lines[firstTextIdx] = `${indent}${newPrefix}${rest}`;
+    } else {
+      lines[firstTextIdx] = `${indent}${newPrefix}${trimmed}`;
+    }
+    return { body: lines.join("\n"), symbol };
+  }
+
+  return { body, symbol };
 }

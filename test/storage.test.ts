@@ -70,12 +70,20 @@ test("saveRecord, readRecord, updateRecordStatus, and searchRecords work atomica
   const tempDir = await mkdtemp(join(tmpdir(), "pi-spai-test-"));
 
   try {
-    const record1 = await saveRecord(tempDir, ". Implementovat SPAI :core: ! @2026-09-01", "docs/spai");
+    const record1 = await saveRecord(
+      tempDir,
+      ". Implementovat SPAI :core: ! @2026-09-01",
+      "docs/spai",
+    );
     assert.equal(record1.id, "SPAI-001");
     assert.equal(record1.type, "Todo");
     assert.equal(record1.status, "todo");
 
-    const record2 = await saveRecord(tempDir, "? Nový nápad na visualizer :idea:", "docs/spai");
+    const record2 = await saveRecord(
+      tempDir,
+      "? Nový nápad na visualizer :idea:",
+      "docs/spai",
+    );
     assert.equal(record2.id, "SPAI-002");
     assert.equal(record2.type, "Idea");
 
@@ -85,12 +93,22 @@ test("saveRecord, readRecord, updateRecordStatus, and searchRecords work atomica
     assert.equal(read?.title, "Implementovat SPAI");
 
     // Update status
-    const updated = await updateRecordStatus(tempDir, "SPAI-001", "done", "docs/spai");
+    const updated = await updateRecordStatus(
+      tempDir,
+      "SPAI-001",
+      "done",
+      "docs/spai",
+    );
     assert.ok(updated);
     assert.equal(updated?.status, "done");
 
     // Search
-    const search = await searchRecords(tempDir, "visualizer", undefined, "docs/spai");
+    const search = await searchRecords(
+      tempDir,
+      "visualizer",
+      undefined,
+      "docs/spai",
+    );
     assert.equal(search.length, 1);
     assert.equal(search[0]?.id, "SPAI-002");
 

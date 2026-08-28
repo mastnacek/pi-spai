@@ -144,13 +144,19 @@ export function formatReadingMode(
   ];
 
   if (record.deadline) {
-    lines.push(`  ${violetGlow("Termín:")}      ${goldGlow(`⏰ ${record.deadline}`)}`);
+    lines.push(
+      `  ${violetGlow("Termín:")}      ${goldGlow(`⏰ ${record.deadline}`)}`,
+    );
   }
   if (record.priority) {
-    lines.push(`  ${violetGlow("Priorita:")}    ${coralGlow(`⚡ ${record.priority.toUpperCase()}`)}`);
+    lines.push(
+      `  ${violetGlow("Priorita:")}    ${coralGlow(`⚡ ${record.priority.toUpperCase()}`)}`,
+    );
   }
   if (record.tags.length > 0) {
-    lines.push(`  ${violetGlow("Štítky:")}      ${violetGlow(record.tags.map((tg) => `:${tg}:`).join(" "))}`);
+    lines.push(
+      `  ${violetGlow("Štítky:")}      ${violetGlow(record.tags.map((tg) => `:${tg}:`).join(" "))}`,
+    );
   }
 
   lines.push(divider);
@@ -244,7 +250,8 @@ export function renderDirectoryTable(
       const idCol = t.bold(pinkGlow(r.id.padEnd(8)));
       const statusCol = renderSpaiStatusBadge(r.status).padEnd(17);
       const typeCol = renderSpaiTypeBadge(r.type).padEnd(18);
-      const tagsStr = r.tags.length > 0 ? ` ${violetGlow(`:${r.tags.join(":")}:`)}` : "";
+      const tagsStr =
+        r.tags.length > 0 ? ` ${violetGlow(`:${r.tags.join(":")}:`)}` : "";
       const truncatedTitle =
         r.title.length > 28 ? `${r.title.slice(0, 25)}...` : r.title;
       const titleCol = `${truncatedTitle}${tagsStr}`.padEnd(34);
