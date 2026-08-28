@@ -178,10 +178,9 @@ export class KanbanBoardComponent implements Component {
     let targetColIdx = this.focusCol;
     if (direction === "left") {
       targetColIdx =
-        targetColIdx > 0 ? targetColIdx - 1 : KANBAN_COLUMNS.length - 1;
+        (this.focusCol - 1 + KANBAN_COLUMNS.length) % KANBAN_COLUMNS.length;
     } else {
-      targetColIdx =
-        targetColIdx < KANBAN_COLUMNS.length - 1 ? targetColIdx + 1 : 0;
+      targetColIdx = (this.focusCol + 1) % KANBAN_COLUMNS.length;
     }
 
     const nextStatus = KANBAN_COLUMNS[targetColIdx]?.status;
@@ -249,6 +248,7 @@ export class KanbanBoardComponent implements Component {
     }
     // Step move right: Space / Tab / L / Shift+Right / ] / >
     else if (
+      data === " " ||
       matchesKey(data, Key.space) ||
       matchesKey(data, Key.tab) ||
       data === "L" ||
@@ -309,7 +309,7 @@ export class KanbanBoardComponent implements Component {
     // Header title bar
     const titleBar = defaultBold(pinkGlow("◈ SPAI KANBAN BOARD ◈"));
     const hintBar = violetGlow(
-      "←→: sloupec • ↑↓: úkol • 1-5 / Space / H,L: přesun stavu • enter: detail • esc: zavřít",
+      "←→: sloupec • ↑↓: úkol • 1-5: přesun • Space: rotace (smyčka) • enter: detail • esc: zavřít",
     );
     lines.push(truncateToWidth(`  ${titleBar}  ${hintBar}`, width));
     lines.push(dividerGlow("━".repeat(width)));
