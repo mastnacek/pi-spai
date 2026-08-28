@@ -323,9 +323,10 @@ export function formatSpaiLine(line: string): string {
 /**
  * Gets the standard prefix string and symbol for a given SPAI status.
  */
-export function getStatusPrefix(
-  status: SpaiStatus,
-): { prefix: string; symbol: string } {
+export function getStatusPrefix(status: SpaiStatus): {
+  prefix: string;
+  symbol: string;
+} {
   switch (status) {
     case "working":
       return { prefix: "/ ", symbol: "/" };

@@ -15,12 +15,12 @@ import {
 } from "@earendil-works/pi-tui";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { KanbanBoardComponent } from "./src/kanban.js";
 import {
   cycleNextStatus,
   matchSpaiPrefix,
   parseInlineMeta,
   parseSpai,
-  toggleSubtaskDone,
 } from "./src/spai.js";
 import {
   ensureSpaiDir,
@@ -34,13 +34,10 @@ import {
 } from "./src/storage.js";
 import type {
   SpaiIndex,
-  SpaiNoteType,
   SpaiRecord,
   SpaiStatus,
 } from "./src/types.js";
 import {
-  cyanGlow,
-  defaultBold,
   dividerGlow,
   formatReadingMode,
   goldGlow,
@@ -55,9 +52,14 @@ import {
 
 const SUBCOMMANDS = [
   {
+    value: "board",
+    label: "board",
+    description: "Interaktivní Kanban tabule (přesouvání úkolů a změna stavů)",
+  },
+  {
     value: "list",
     label: "list [todo|idea|note|all]",
-    description: "Zobrazit interaktivní TUI přehled a tabulku SPAI položek",
+    description: "Zobrazit přehled a tabulku SPAI položek",
   },
   {
     value: "new",
@@ -215,7 +217,8 @@ async function openReaderView(
           );
           if (picked) {
             const pickedIdx = choices.indexOf(picked);
-            const chosenStatus = pickedIdx !== -1 ? statuses[pickedIdx] : undefined;
+            const chosenStatus =
+              pickedIdx === -1 ? undefined : statuses[pickedIdx];
             if (chosenStatus) {
               const updated = await updateRecordStatus(
                 ctx.cwd,
@@ -331,11 +334,76 @@ async function openDirectoryExplorer(
   }
 }
 
+async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
+  const index = await getOrLoadIndex(ctx.cwd);
+  const spaiDir = getSpaiDir(ctx.cwd);
+
+  if (index.records.length === 0) {
+    ctx.ui.notify(
+      "V docs/spai/ nebyly nalezeny žádné úkoly. Vytvořte nový přes `/spai new <text>`.",
+      "info",
+    );
+    return;
+  }
+
+  if (!ctx.hasUI) {
+    ctx.ui.notify(renderDirectoryTable(index, spaiDir), "info");
+    return;
+  }
+
+  while (true) {
+    let openedRecord: SpaiRecord | null = null;
+    let requestNew = false;
+
+    await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
+      const board = new KanbanBoardComponent({
+        cwd: ctx.cwd,
+        index,
+        onOpenRecord: (rec: SpaiRecord) => {
+          openedRecord = rec;
+          done();
+        },
+        onNewTask: () => {
+          requestNew = true;
+          done();
+        },
+        onClose: () => done(),
+        onRequestRender: () => tui.requestRender(),
+      });
+
+      return {
+        render: (w) => board.render(w),
+        invalidate: () => board.invalidate(),
+        handleInput: (data) => board.handleInput(data),
+      };
+    });
+
+    if (requestNew) {
+      await handleNew("", ctx);
+      invalidateCache();
+      continue;
+    }
+
+    if (openedRecord) {
+      await openReaderView(ctx, openedRecord, true);
+      invalidateCache();
+      continue;
+    }
+
+    break;
+  }
+}
+
 async function handleList(
   remainder: string,
   ctx: ExtensionCommandContext,
 ): Promise<void> {
   const arg = remainder.trim().toLowerCase();
+  if (!arg || arg === "board" || arg === "kanban") {
+    await openKanbanBoard(ctx);
+    return;
+  }
+
   let statusFilter: SpaiStatus | undefined;
   if (arg === "todo") statusFilter = "todo";
   else if (arg === "done") statusFilter = "done";
@@ -725,6 +793,10 @@ export default function (pi: ExtensionAPI): void {
       const remainder = rest.join(" ").trim();
 
       switch (subcommand.toLowerCase()) {
+        case "board":
+        case "kanban":
+          await openKanbanBoard(ctx);
+          break;
         case "list":
           await handleList(remainder, ctx);
           break;
