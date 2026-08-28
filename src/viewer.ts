@@ -15,41 +15,46 @@ export interface StyleTheme {
   underline?: (text: string) => string;
 }
 
-const NEON_PINK = "\x1b[38;2;255;113;206m";
-const NEON_CYAN = "\x1b[38;2;1;205;254m";
-const NEON_GREEN = "\x1b[38;2;5;255;161m";
-const NEON_GOLD = "\x1b[38;2;255;211;25m";
-const NEON_CORAL = "\x1b[38;2;255;85;115m";
-const NEON_VIOLET = "\x1b[38;2;185;103;255m";
-const GLOW_DIVIDER = "\x1b[38;2;130;70;170m";
-const ANSI_RESET = "\x1b[39m";
+// Linkarzu theme colors from mozek_rust
+const LINKARZU_TODO = "\x1b[38;2;249;77;255m"; // #f94dff (vivid pink)
+const LINKARZU_WORKING = "\x1b[38;2;241;252;121m"; // #f1fc79 (electric yellow)
+const LINKARZU_WAITING = "\x1b[38;2;152;122;251m"; // #987afb (neon violet/purple)
+const LINKARZU_DONE = "\x1b[38;2;55;244;153m"; // #37f499 (neon mint green)
+const LINKARZU_CANCELLED = "\x1b[38;2;135;145;170m"; // #5f6b8a (slate grey)
+const LINKARZU_CYAN = "\x1b[38;2;4;209;249m"; // #04d1f9 (neon cyan / accent)
+const LINKARZU_CORAL = "\x1b[38;2;241;108;117m"; // #f16c75 (coral / danger)
+const LINKARZU_BORDER = "\x1b[38;2;60;75;105m"; // #314154 (border)
 
 export function pinkGlow(text: string): string {
-  return `${NEON_PINK}${text}${ANSI_RESET}`;
+  return `${LINKARZU_TODO}${text}\x1b[39m`;
 }
 
 export function cyanGlow(text: string): string {
-  return `${NEON_CYAN}${text}${ANSI_RESET}`;
+  return `${LINKARZU_CYAN}${text}\x1b[39m`;
 }
 
 export function greenGlow(text: string): string {
-  return `${NEON_GREEN}${text}${ANSI_RESET}`;
+  return `${LINKARZU_DONE}${text}\x1b[39m`;
 }
 
 export function goldGlow(text: string): string {
-  return `${NEON_GOLD}${text}${ANSI_RESET}`;
+  return `${LINKARZU_WORKING}${text}\x1b[39m`;
 }
 
 export function coralGlow(text: string): string {
-  return `${NEON_CORAL}${text}${ANSI_RESET}`;
+  return `${LINKARZU_CORAL}${text}\x1b[39m`;
 }
 
 export function violetGlow(text: string): string {
-  return `${NEON_VIOLET}${text}${ANSI_RESET}`;
+  return `${LINKARZU_WAITING}${text}\x1b[39m`;
+}
+
+export function slateGlow(text: string): string {
+  return `${LINKARZU_CANCELLED}${text}\x1b[39m`;
 }
 
 export function dividerGlow(text: string): string {
-  return `${GLOW_DIVIDER}${text}${ANSI_RESET}`;
+  return `${LINKARZU_BORDER}${text}\x1b[39m`;
 }
 
 export function defaultBold(text: string): string {
@@ -83,13 +88,13 @@ export function renderSpaiStatusBadge(status: SpaiStatus): string {
     case "working":
       return goldGlow("◐ working");
     case "waiting":
-      return goldGlow("⏳ waiting");
+      return violetGlow("⏳ waiting");
     case "todo":
-      return cyanGlow("○ todo");
+      return pinkGlow("○ todo");
     case "cancelled":
-      return coralGlow("✗ cancelled");
+      return slateGlow("✗ cancelled");
     case "idea":
-      return pinkGlow("💡 idea");
+      return cyanGlow("💡 idea");
     case "note":
     default:
       return violetGlow("• note");
@@ -99,9 +104,9 @@ export function renderSpaiStatusBadge(status: SpaiStatus): string {
 export function renderSpaiTypeBadge(type: SpaiNoteType): string {
   switch (type) {
     case "Todo":
-      return cyanGlow("[TODO]");
+      return pinkGlow("[TODO]");
     case "Idea":
-      return pinkGlow("[IDEA]");
+      return cyanGlow("[IDEA]");
     case "Note":
     default:
       return violetGlow("[NOTE]");
@@ -192,11 +197,11 @@ export function renderDirectoryHeader(
   const notes = index.records.filter((r) => r.type === "Note").length;
 
   const stats = [
-    cyanGlow(`○ ${todos} todo`),
+    pinkGlow(`○ ${todos} todo`),
     goldGlow(`◐ ${working} rozpracováno`),
-    goldGlow(`⏳ ${waiting} čeká`),
+    violetGlow(`⏳ ${waiting} čeká`),
     greenGlow(`✓ ${done} hotovo`),
-    pinkGlow(`💡 ${ideas} nápadů`),
+    cyanGlow(`💡 ${ideas} nápadů`),
     violetGlow(`• ${notes} poznámek`),
   ].join("  ");
 

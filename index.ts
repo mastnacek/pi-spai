@@ -16,12 +16,7 @@ import {
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { KanbanBoardComponent } from "./src/kanban.js";
-import {
-  cycleNextStatus,
-  matchSpaiPrefix,
-  parseInlineMeta,
-  parseSpai,
-} from "./src/spai.js";
+import { cycleNextStatus } from "./src/spai.js";
 import {
   ensureSpaiDir,
   getIndexPath,
@@ -32,11 +27,7 @@ import {
   searchRecords,
   updateRecordStatus,
 } from "./src/storage.js";
-import type {
-  SpaiIndex,
-  SpaiRecord,
-  SpaiStatus,
-} from "./src/types.js";
+import type { SpaiIndex, SpaiRecord, SpaiStatus } from "./src/types.js";
 import {
   dividerGlow,
   formatReadingMode,
@@ -335,7 +326,8 @@ async function openDirectoryExplorer(
 }
 
 async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
-  const index = await getOrLoadIndex(ctx.cwd);
+  invalidateCache();
+  let index = await getOrLoadIndex(ctx.cwd);
   const spaiDir = getSpaiDir(ctx.cwd);
 
   if (index.records.length === 0) {
@@ -352,6 +344,7 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
   }
 
   while (true) {
+    index = await getOrLoadIndex(ctx.cwd);
     let openedRecord: SpaiRecord | null = null;
     let requestNew = false;
 

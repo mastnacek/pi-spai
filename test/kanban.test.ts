@@ -26,6 +26,16 @@ test("KanbanBoardComponent renders columns", () => {
         tags: ["core"],
         file: "1.md",
       },
+      {
+        id: "SPAI-002",
+        title: "Working Task",
+        type: "Todo",
+        status: "working",
+        symbol: "/",
+        timestamp: "2026-08-27 10:50:45",
+        tags: ["dev"],
+        file: "2.md",
+      },
     ],
   };
 
@@ -39,5 +49,23 @@ test("KanbanBoardComponent renders columns", () => {
   assert.ok(rendered.length > 0);
   assert.ok(rendered.some((l) => l.includes("KANBAN")));
   assert.ok(rendered.some((l) => l.includes("TODO")));
+  assert.ok(rendered.some((l) => l.includes("WORKING")));
   assert.ok(rendered.some((l) => l.includes("DONE")));
+  assert.ok(rendered.some((l) => l.includes("#1")));
+});
+
+test("KANBAN_COLUMNS match mozek_rust Linkarzu theme colors", () => {
+  const [todo, working, waiting, done, cancelled] = KANBAN_COLUMNS;
+  assert.equal(todo?.status, "todo");
+  assert.equal(working?.status, "working");
+  assert.equal(waiting?.status, "waiting");
+  assert.equal(done?.status, "done");
+  assert.equal(cancelled?.status, "cancelled");
+
+  // Verify shortcuts 1-5 exist
+  assert.equal(todo?.shortcut, "1");
+  assert.equal(working?.shortcut, "2");
+  assert.equal(waiting?.shortcut, "3");
+  assert.equal(done?.shortcut, "4");
+  assert.equal(cancelled?.shortcut, "5");
 });
