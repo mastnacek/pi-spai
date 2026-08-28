@@ -347,9 +347,7 @@ export class KanbanBoardComponent implements Component {
 
     // 3. Compact Hints / Hotkeys Line
     const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: skok stavu  ${cyanGlow("Space")}: rotace  ${cyanGlow("n")}: nový  ${cyanGlow("enter")}: detail  ${cyanGlow("esc")}: zavřít`;
-    lines.push(
-      border("│") + padToWidth(hintText, innerWidth) + border("│"),
-    );
+    lines.push(border("│") + padToWidth(hintText, innerWidth) + border("│"));
 
     // 4. Header Top Grid Border
     const headerTopSep = colWidths.map((w) => "─".repeat(w)).join("┬");
