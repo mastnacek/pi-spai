@@ -25,6 +25,98 @@ const LINKARZU_CYAN = "\x1b[38;2;4;209;249m"; // #04d1f9 (neon cyan / accent)
 const LINKARZU_CORAL = "\x1b[38;2;241;108;117m"; // #f16c75 (coral / danger)
 const LINKARZU_BORDER = "\x1b[38;2;60;75;105m"; // #314154 (border)
 
+export interface SpaiStatusCounts {
+  done: number;
+  working: number;
+  waiting: number;
+  todo: number;
+  cancelled: number;
+  total: number;
+}
+
+/**
+ * Computes SPAI status distribution counts from index.
+ */
+export function getStatusCounts(index: SpaiIndex): SpaiStatusCounts {
+  let done = 0;
+  let working = 0;
+  let waiting = 0;
+  let todo = 0;
+  let cancelled = 0;
+
+  for (const r of index.records) {
+    switch (r.status) {
+      case "done":
+        done++;
+        break;
+      case "working":
+        working++;
+        break;
+      case "waiting":
+        waiting++;
+        break;
+      case "cancelled":
+        cancelled++;
+        break;
+      case "todo":
+      default:
+        todo++;
+        break;
+    }
+  }
+
+  const total = done + working + waiting + todo + cancelled;
+  return { done, working, waiting, todo, cancelled, total };
+}
+
+/**
+ * Renders a full multi-segmented colored SPAI Status Ribbon bar.
+ * Matches 1:1 with mozek_rust / tui status ribbon specification:
+ * Segments: [Done (green) | Working (yellow) | Waiting (violet) | Todo (pink) | Cancelled (slate)]
+ * Followed by [Done/Total] and completion percentage.
+ */
+export function renderSpaiRibbon(
+  counts: SpaiStatusCounts,
+  barWidth = 24,
+): string {
+  const total = counts.total;
+  if (total === 0 || barWidth <= 0) {
+    return dividerGlow("░".repeat(Math.max(1, barWidth)));
+  }
+
+  const seg = (count: number): number => {
+    if (total === 0) return 0;
+    return Math.round((count / total) * barWidth);
+  };
+
+  let sDone = seg(counts.done);
+  let sProg = seg(counts.working);
+  let sWait = seg(counts.waiting);
+  let sCancel = seg(counts.cancelled);
+  let sPending = Math.max(0, barWidth - (sDone + sProg + sWait + sCancel));
+
+  // Fix rounding overshoot
+  const sum = sDone + sProg + sWait + sCancel + sPending;
+  if (sum > barWidth) {
+    const diff = sum - barWidth;
+    if (sPending >= diff) sPending -= diff;
+    else if (sDone >= diff) sDone -= diff;
+    else if (sProg >= diff) sProg -= diff;
+  }
+
+  const pct = Math.round((counts.done / total) * 100);
+
+  const ribbon =
+    greenGlow("█".repeat(sDone)) +
+    goldGlow("█".repeat(sProg)) +
+    violetGlow("█".repeat(sWait)) +
+    pinkGlow("█".repeat(sPending)) +
+    slateGlow("█".repeat(sCancel));
+
+  const stats = ` ${greenGlow(`[${counts.done}/${total}]`)} ${dividerGlow(`${pct}%`)}`;
+  return `${ribbon}${stats}`;
+}
+
 export function pinkGlow(text: string): string {
   return `${LINKARZU_TODO}${text}\x1b[39m`;
 }
@@ -164,6 +256,22 @@ export function formatReadingMode(
     );
   }
 
+  if (record.subtasks && record.subtasks.length > 0) {
+    const subDone = record.subtasks.filter((s) => s.done).length;
+    const subTotal = record.subtasks.length;
+    const subCounts: SpaiStatusCounts = {
+      done: subDone,
+      working: 0,
+      waiting: 0,
+      todo: subTotal - subDone,
+      cancelled: 0,
+      total: subTotal,
+    };
+    lines.push(
+      `  ${violetGlow("Podúkoly:")}    ${renderSpaiRibbon(subCounts, 20)}`,
+    );
+  }
+
   lines.push(divider);
   lines.push("");
   lines.push(`  ${t.bold(cyanGlow("◆ OBSAH A PODÚKOLY"))}`);
@@ -189,18 +297,17 @@ export function renderDirectoryHeader(
   theme?: StyleTheme,
 ): string[] {
   const t = resolveTheme(theme);
-  const todos = index.records.filter((r) => r.status === "todo").length;
-  const working = index.records.filter((r) => r.status === "working").length;
-  const waiting = index.records.filter((r) => r.status === "waiting").length;
-  const done = index.records.filter((r) => r.status === "done").length;
+  const counts = getStatusCounts(index);
   const ideas = index.records.filter((r) => r.type === "Idea").length;
   const notes = index.records.filter((r) => r.type === "Note").length;
 
+  const ribbon = renderSpaiRibbon(counts, 24);
+
   const stats = [
-    pinkGlow(`○ ${todos} todo`),
-    goldGlow(`◐ ${working} rozpracováno`),
-    violetGlow(`⏳ ${waiting} čeká`),
-    greenGlow(`✓ ${done} hotovo`),
+    pinkGlow(`○ ${counts.todo} todo`),
+    goldGlow(`◐ ${counts.working} rozpracováno`),
+    violetGlow(`⏳ ${counts.waiting} čeká`),
+    greenGlow(`✓ ${counts.done} hotovo`),
     cyanGlow(`💡 ${ideas} nápadů`),
     violetGlow(`• ${notes} poznámek`),
   ].join("  ");
@@ -208,6 +315,7 @@ export function renderDirectoryHeader(
   return [
     t.bold(pinkGlow("  ◈ SPAI TASK & IDEA LEDGER")),
     `  ${violetGlow("Složka:")}   ${t.fg("dim", dirPath)}`,
+    `  ${violetGlow("Ribbon:")}   ${ribbon}`,
     `  ${violetGlow("Položky:")}  ${t.bold(String(index.records.length))} celkem  [${stats}]`,
     `  ${violetGlow("Změněno:")}  ${t.fg("dim", index.lastUpdated || "nikdy")}`,
   ];

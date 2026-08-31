@@ -37,11 +37,13 @@ import {
   dividerGlow,
   formatReadingMode,
   formatStatusLine,
+  getStatusCounts,
   goldGlow,
   greenGlow,
   pinkGlow,
   renderDirectoryHeader,
   renderDirectoryTable,
+  renderSpaiRibbon,
   renderSpaiStatusBadge,
   renderSpaiTypeBadge,
   violetGlow,
@@ -112,9 +114,7 @@ function invalidateCache(): void {
   cachedIndex = null;
 }
 
-function formatRealizePrompt(
-  record: SpaiRecord | SpaiIndexEntry,
-): string {
+function formatRealizePrompt(record: SpaiRecord | SpaiIndexEntry): string {
   const isTask = "type" in record && record.type === "Todo";
   const bodyText =
     "body" in record && record.body ? `\n\n${record.body.trim()}` : "";
@@ -666,6 +666,8 @@ async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
   const index = await getOrLoadIndex(ctx.cwd);
   const spaiDir = getSpaiDir(ctx.cwd);
   const indexPath = getIndexPath(ctx.cwd);
+  const counts = getStatusCounts(index);
+  const ribbon = renderSpaiRibbon(counts, 28);
 
   const todos = index.records.filter((r) => r.status === "todo").length;
   const working = index.records.filter((r) => r.status === "working").length;
@@ -682,6 +684,7 @@ async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
     "# Stav pi-spai Ledgeru",
     `- **Složka:** ${spaiDir}`,
     `- **Index:** ${indexPath}`,
+    `- **Ribbon:** ${ribbon}`,
     `- **Statusline:** ${statusDashboard}`,
     `- **Celkem položek:** ${index.records.length}`,
     `- **Úkoly (. todo):** ${todos}`,

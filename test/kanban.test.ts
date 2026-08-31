@@ -107,4 +107,3 @@ test("KanbanBoardComponent accepts onStatusChange and onRealizeRecord callback o
       assert.equal(changed, false);
       assert.equal(realized, false);
 });
-

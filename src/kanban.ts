@@ -17,9 +17,11 @@ import {
   cyanGlow,
   defaultBold,
   dividerGlow,
+  getStatusCounts,
   goldGlow,
   greenGlow,
   pinkGlow,
+  renderSpaiRibbon,
   slateGlow,
   violetGlow,
 } from "./viewer.js";
@@ -402,7 +404,12 @@ export class KanbanBoardComponent implements Component {
         border("│"),
     );
 
-    // 4. Divider under Tabs
+    // 4. Status Ribbon Row
+    const counts = getStatusCounts(this.index);
+    const ribbonStr = ` ${renderSpaiRibbon(counts, Math.max(10, innerWidth - 14))}`;
+    lines.push(border("│") + padToWidth(ribbonStr, innerWidth) + border("│"));
+
+    // 5. Divider under Tabs
     lines.push(border(`├${"─".repeat(innerWidth)}┤`));
 
     // 5. Active Column Banner
@@ -573,7 +580,12 @@ export class KanbanBoardComponent implements Component {
         border("│"),
     );
 
-    // 3. Compact Hints / Hotkeys Line
+    // 3. Status Ribbon Row
+    const countsWide = getStatusCounts(this.index);
+    const ribbonWide = ` ${renderSpaiRibbon(countsWide, Math.max(10, innerWidth - 14))}`;
+    lines.push(border("│") + padToWidth(ribbonWide, innerWidth) + border("│"));
+
+    // 4. Compact Hints / Hotkeys Line
     const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: stav  ${cyanGlow("r")}: realize (řešit)  ${cyanGlow("enter")}: detail  ${cyanGlow("n")}: nový  ${cyanGlow("esc")}: zavřít`;
     lines.push(border("│") + padToWidth(hintText, innerWidth) + border("│"));
 

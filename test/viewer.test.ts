@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatStatusLine, stripMarkdownSyntax } from "../src/viewer.js";
+import {
+      formatStatusLine,
+      getStatusCounts,
+      renderSpaiRibbon,
+      stripMarkdownSyntax,
+} from "../src/viewer.js";
 import type { SpaiIndex } from "../src/types.js";
 
 // Helper to strip ANSI codes for asserting plain text content
@@ -164,3 +169,54 @@ test("stripMarkdownSyntax strips formatting", () => {
       assert.equal(stripMarkdownSyntax("# Header"), "Header");
       assert.equal(stripMarkdownSyntax("[Link](https://example.com)"), "Link");
 });
+
+test("getStatusCounts and renderSpaiRibbon calculate status distribution bar", () => {
+      const index: SpaiIndex = {
+            version: 1,
+            lastUpdated: "2026-08-27 10:00:00",
+            records: [
+                  {
+                        id: "SPAI-001",
+                        title: "Done task",
+                        type: "Todo",
+                        status: "done",
+                        symbol: "x",
+                        timestamp: "2026-08-27 10:00:00",
+                        tags: [],
+                        file: "1.md",
+                  },
+                  {
+                        id: "SPAI-002",
+                        title: "Working task",
+                        type: "Todo",
+                        status: "working",
+                        symbol: "/",
+                        timestamp: "2026-08-27 10:00:00",
+                        tags: [],
+                        file: "2.md",
+                  },
+                  {
+                        id: "SPAI-003",
+                        title: "Todo task",
+                        type: "Todo",
+                        status: "todo",
+                        symbol: ".",
+                        timestamp: "2026-08-27 10:00:00",
+                        tags: [],
+                        file: "3.md",
+                  },
+            ],
+      };
+
+      const counts = getStatusCounts(index);
+      assert.equal(counts.done, 1);
+      assert.equal(counts.working, 1);
+      assert.equal(counts.todo, 1);
+      assert.equal(counts.total, 3);
+
+      const ribbon = renderSpaiRibbon(counts, 15);
+      assert.ok(ribbon.includes("█"));
+      assert.ok(ribbon.includes("[1/3]"));
+      assert.ok(ribbon.includes("33%"));
+});
+
