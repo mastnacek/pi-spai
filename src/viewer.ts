@@ -214,6 +214,87 @@ export function renderDirectoryHeader(
 }
 
 /**
+ * Formats a compact, colorful SPAI syntax dashboard statusline string for the Pi agent.
+ * Only displays indicators that have active / non-zero counts to save statusline space.
+ * Returns undefined if there are no records or all counts are zero.
+ */
+export function formatStatusLine(index?: SpaiIndex | null): string | undefined {
+  if (!index || !index.records || index.records.length === 0) {
+    return undefined;
+  }
+
+  const todos = index.records.filter((r) => r.status === "todo").length;
+  const working = index.records.filter((r) => r.status === "working").length;
+  const waiting = index.records.filter((r) => r.status === "waiting").length;
+  const done = index.records.filter((r) => r.status === "done").length;
+  const cancelled = index.records.filter(
+    (r) => r.status === "cancelled",
+  ).length;
+  const ideas = index.records.filter(
+    (r) =>
+      r.status === "idea" ||
+      (r.type === "Idea" &&
+        r.status !== "todo" &&
+        r.status !== "working" &&
+        r.status !== "waiting" &&
+        r.status !== "done" &&
+        r.status !== "cancelled"),
+  ).length;
+  const notes = index.records.filter(
+    (r) =>
+      r.status === "note" ||
+      (r.type === "Note" &&
+        r.status !== "todo" &&
+        r.status !== "working" &&
+        r.status !== "waiting" &&
+        r.status !== "done" &&
+        r.status !== "cancelled" &&
+        r.status !== "inbox"),
+  ).length;
+  const highPrio = index.records.filter(
+    (r) =>
+      r.priority === "high" &&
+      (r.status === "todo" ||
+        r.status === "working" ||
+        r.status === "waiting"),
+  ).length;
+
+  const parts: string[] = [];
+
+  if (highPrio > 0) {
+    parts.push(coralGlow(`! ${highPrio}`));
+  }
+  if (todos > 0) {
+    parts.push(pinkGlow(`. ${todos}`));
+  }
+  if (working > 0) {
+    parts.push(goldGlow(`/ ${working}`));
+  }
+  if (waiting > 0) {
+    parts.push(violetGlow(`/. ${waiting}`));
+  }
+  if (done > 0) {
+    parts.push(greenGlow(`X ${done}`));
+  }
+  if (cancelled > 0) {
+    parts.push(slateGlow(`Z ${cancelled}`));
+  }
+  if (ideas > 0) {
+    parts.push(cyanGlow(`? ${ideas}`));
+  }
+  if (notes > 0) {
+    parts.push(violetGlow(`- ${notes}`));
+  }
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  const prefix = pinkGlow("SPAI:");
+  return `${prefix} ${parts.join("  ")}`;
+}
+
+/**
  * Renders ASCII table of SPAI tasks/ideas/notes.
  */
 export function renderDirectoryTable(

@@ -31,6 +31,7 @@ import type { SpaiIndex, SpaiRecord, SpaiStatus } from "./src/types.js";
 import {
   dividerGlow,
   formatReadingMode,
+  formatStatusLine,
   goldGlow,
   greenGlow,
   pinkGlow,
@@ -96,17 +97,24 @@ function invalidateCache(): void {
   cachedIndex = null;
 }
 
+async function updateStatusBar(
+  ctx: ExtensionContext | ExtensionCommandContext,
+): Promise<void> {
+  if (!ctx.hasUI) return;
+  try {
+    const index = await getOrLoadIndex(ctx.cwd);
+    const statusText = formatStatusLine(index);
+    ctx.ui.setStatus("pi-spai", statusText);
+  } catch {
+    // Non-blocking
+  }
+}
+
 async function handleSessionStart(ctx: ExtensionContext): Promise<void> {
   try {
     await ensureSpaiDir(ctx.cwd);
     invalidateCache();
-    const index = await getOrLoadIndex(ctx.cwd);
-    if (ctx.hasUI && index.records.length > 0) {
-      const activeTodos = index.records.filter(
-        (r) => r.status === "todo" || r.status === "working",
-      ).length;
-      ctx.ui.setStatus("pi-spai", `SPAI: ${activeTodos} aktivních úkolů`);
-    }
+    await updateStatusBar(ctx);
   } catch {
     // Non-blocking
   }
@@ -186,6 +194,7 @@ async function openReaderView(
           if (updated) {
             currentRecord = updated;
             invalidateCache();
+            await updateStatusBar(ctx);
             rebuild();
             tui.requestRender();
           }
@@ -219,6 +228,7 @@ async function openReaderView(
               if (updated) {
                 currentRecord = updated;
                 invalidateCache();
+                await updateStatusBar(ctx);
                 rebuild();
                 tui.requestRender();
               }
@@ -361,7 +371,10 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
           done();
         },
         onClose: () => done(),
-        onRequestRender: () => tui.requestRender(),
+        onRequestRender: () => {
+          tui.requestRender();
+          void updateStatusBar(ctx);
+        },
       });
 
       return {
@@ -374,15 +387,18 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
     if (requestNew) {
       await handleNew("", ctx);
       invalidateCache();
+      await updateStatusBar(ctx);
       continue;
     }
 
     if (openedRecord) {
       await openReaderView(ctx, openedRecord, true);
       invalidateCache();
+      await updateStatusBar(ctx);
       continue;
     }
 
+    await updateStatusBar(ctx);
     break;
   }
 }
@@ -428,6 +444,7 @@ async function handleNew(
 
   const saved = await saveRecord(ctx.cwd, text);
   invalidateCache();
+  await updateStatusBar(ctx);
 
   ctx.ui.notify(
     `Vytvořena položka ${pinkGlow(saved.id)}: ${saved.title} [${saved.type} - ${saved.status}]\nUloženo do ${saved.file}`,
@@ -498,6 +515,7 @@ async function handleToggle(
 
   const updated = await updateRecordStatus(ctx.cwd, record.id, nextStatus);
   invalidateCache();
+  await updateStatusBar(ctx);
 
   if (updated) {
     ctx.ui.notify(
@@ -546,20 +564,24 @@ async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
   const working = index.records.filter((r) => r.status === "working").length;
   const waiting = index.records.filter((r) => r.status === "waiting").length;
   const done = index.records.filter((r) => r.status === "done").length;
+  const cancelled = index.records.filter((r) => r.status === "cancelled").length;
   const ideas = index.records.filter((r) => r.type === "Idea").length;
   const notes = index.records.filter((r) => r.type === "Note").length;
+  const statusDashboard = formatStatusLine(index) || "(prázdné / skryté)";
 
   const lines = [
     "# Stav pi-spai Ledgeru",
     `- **Složka:** ${spaiDir}`,
     `- **Index:** ${indexPath}`,
+    `- **Statusline:** ${statusDashboard}`,
     `- **Celkem položek:** ${index.records.length}`,
-    `- **Úkoly (todo):** ${todos}`,
-    `- **Rozpracováno (working):** ${working}`,
-    `- **Čekající (waiting):** ${waiting}`,
-    `- **Dokončeno (done):** ${done}`,
-    `- **Nápady (ideas):** ${ideas}`,
-    `- **Poznámky (notes):** ${notes}`,
+    `- **Úkoly (. todo):** ${todos}`,
+    `- **Rozpracováno (/ working):** ${working}`,
+    `- **Čekající (/. waiting):** ${waiting}`,
+    `- **Dokončeno (X done):** ${done}`,
+    `- **Zrušeno (Z cancelled):** ${cancelled}`,
+    `- **Nápady (? ideas):** ${ideas}`,
+    `- **Poznámky (- notes):** ${notes}`,
     `- **Změněno:** ${index.lastUpdated || "Nikdy"}`,
   ];
 
@@ -772,6 +794,7 @@ function registerTools(pi: ExtensionAPI): void {
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
       const saved = await saveRecord(ctx.cwd, params.text);
       invalidateCache();
+      await updateStatusBar(ctx);
       if (ctx.hasUI) {
         ctx.ui.notify(`[SPAI] Vytvořeno ${saved.id}: ${saved.title}`, "info");
       }
