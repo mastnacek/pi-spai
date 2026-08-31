@@ -141,7 +141,15 @@ export class KanbanBoardComponent implements Component {
   }
 
   private getColumnTasks(status: SpaiStatus): SpaiIndexEntry[] {
-    return this.index.records.filter((r) => r.status === status);
+    return this.index.records.filter(
+      (r) =>
+        r.status === status &&
+        (r.type === "Todo" ||
+          (!r.type &&
+            ["todo", "working", "waiting", "done", "cancelled"].includes(
+              r.status,
+            ))),
+    );
   }
 
   private getSelectedRecord(): SpaiIndexEntry | null {
@@ -361,16 +369,13 @@ export class KanbanBoardComponent implements Component {
     lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
 
     // 2. Title & Live Stats Banner
-    const totalRecords = this.index.records.length;
-    const activeTasks = this.index.records.filter(
-      (r) => r.status === "todo" || r.status === "working",
-    ).length;
-    const doneTasks = this.index.records.filter(
-      (r) => r.status === "done",
-    ).length;
+    const counts = getStatusCounts(this.index);
+    const activeTasks = counts.todo + counts.working;
+    const doneTasks = counts.done;
+    const totalTasks = counts.totalTasks;
 
     const titleLeft = defaultBold(pinkGlow(" ◈ SPAI BOARD ◈"));
-    const statsRight = `${goldGlow(`⚡${activeTasks}`)} ${greenGlow(`✓${doneTasks}`)} ${violetGlow(`Σ${totalRecords}`)} `;
+    const statsRight = `${goldGlow(`⚡${activeTasks}`)} ${greenGlow(`✓${doneTasks}`)} ${violetGlow(`Σ${totalTasks}`)} `;
     const bannerSpaces = Math.max(
       1,
       innerWidth - visibleWidth(titleLeft) - visibleWidth(statsRight),
@@ -405,7 +410,6 @@ export class KanbanBoardComponent implements Component {
     );
 
     // 4. Status Ribbon Row
-    const counts = getStatusCounts(this.index);
     const ribbonStr = ` ${renderSpaiRibbon(counts, Math.max(10, innerWidth - 14))}`;
     lines.push(border("│") + padToWidth(ribbonStr, innerWidth) + border("│"));
 
@@ -554,16 +558,17 @@ export class KanbanBoardComponent implements Component {
     lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
 
     // 2. Title & Live Stats Banner
-    const totalRecords = this.index.records.length;
-    const activeTasks = this.index.records.filter(
-      (r) => r.status === "todo" || r.status === "working",
-    ).length;
-    const doneTasks = this.index.records.filter(
-      (r) => r.status === "done",
-    ).length;
+    const countsWide = getStatusCounts(this.index);
+    const activeTasks = countsWide.todo + countsWide.working;
+    const doneTasks = countsWide.done;
+    const totalTasks = countsWide.totalTasks;
 
     const titleLeft = defaultBold(pinkGlow(" ◈ SPAI KANBAN BOARD ◈"));
-    const statsRight = `${goldGlow(`⚡ ${activeTasks} aktivních`)}  ${greenGlow(`✓ ${doneTasks} hotovo`)}  ${violetGlow(`Σ ${totalRecords} položek`)} `;
+    const extraInfo =
+      countsWide.ideas > 0 || countsWide.notes > 0
+        ? ` (${countsWide.totalItems} celkem)`
+        : "";
+    const statsRight = `${goldGlow(`⚡ ${activeTasks} aktivních`)}  ${greenGlow(`✓ ${doneTasks} hotovo`)}  ${violetGlow(`Σ ${totalTasks} úkolů${extraInfo}`)} `;
     const bannerSpaces = Math.max(
       1,
       innerWidth - visibleWidth(titleLeft) - visibleWidth(statsRight),
@@ -581,7 +586,6 @@ export class KanbanBoardComponent implements Component {
     );
 
     // 3. Status Ribbon Row
-    const countsWide = getStatusCounts(this.index);
     const ribbonWide = ` ${renderSpaiRibbon(countsWide, Math.max(10, innerWidth - 14))}`;
     lines.push(border("│") + padToWidth(ribbonWide, innerWidth) + border("│"));
 

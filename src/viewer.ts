@@ -31,11 +31,17 @@ export interface SpaiStatusCounts {
   waiting: number;
   todo: number;
   cancelled: number;
+  ideas: number;
+  notes: number;
+  totalTasks: number;
+  totalItems: number;
   total: number;
 }
 
 /**
- * Computes SPAI status distribution counts from index.
+ * Computes SPAI status distribution counts strictly distinguishing Tasks from Ideas and Notes.
+ * Only Tasks (. / /. x z) are counted in task totals (todo, working, waiting, done, cancelled).
+ * Ideas (? ) and Notes (- #) are tracked in separate idea/note buckets and never counted as tasks.
  */
 export function getStatusCounts(index: SpaiIndex): SpaiStatusCounts {
   let done = 0;
@@ -43,30 +49,54 @@ export function getStatusCounts(index: SpaiIndex): SpaiStatusCounts {
   let waiting = 0;
   let todo = 0;
   let cancelled = 0;
+  let ideas = 0;
+  let notes = 0;
 
   for (const r of index.records) {
-    switch (r.status) {
-      case "done":
-        done++;
-        break;
-      case "working":
-        working++;
-        break;
-      case "waiting":
-        waiting++;
-        break;
-      case "cancelled":
-        cancelled++;
-        break;
-      case "todo":
-      default:
-        todo++;
-        break;
+    if (r.type === "Idea" || r.status === "idea") {
+      ideas++;
+    } else if (
+      r.type === "Note" ||
+      r.status === "note" ||
+      r.status === "inbox"
+    ) {
+      notes++;
+    } else {
+      switch (r.status) {
+        case "done":
+          done++;
+          break;
+        case "working":
+          working++;
+          break;
+        case "waiting":
+          waiting++;
+          break;
+        case "cancelled":
+          cancelled++;
+          break;
+        case "todo":
+        default:
+          todo++;
+          break;
+      }
     }
   }
 
-  const total = done + working + waiting + todo + cancelled;
-  return { done, working, waiting, todo, cancelled, total };
+  const totalTasks = done + working + waiting + todo + cancelled;
+  const totalItems = totalTasks + ideas + notes;
+  return {
+    done,
+    working,
+    waiting,
+    todo,
+    cancelled,
+    ideas,
+    notes,
+    totalTasks,
+    totalItems,
+    total: totalTasks,
+  };
 }
 
 /**
@@ -265,6 +295,10 @@ export function formatReadingMode(
       waiting: 0,
       todo: subTotal - subDone,
       cancelled: 0,
+      ideas: 0,
+      notes: 0,
+      totalTasks: subTotal,
+      totalItems: subTotal,
       total: subTotal,
     };
     lines.push(
@@ -298,8 +332,6 @@ export function renderDirectoryHeader(
 ): string[] {
   const t = resolveTheme(theme);
   const counts = getStatusCounts(index);
-  const ideas = index.records.filter((r) => r.type === "Idea").length;
-  const notes = index.records.filter((r) => r.type === "Note").length;
 
   const ribbon = renderSpaiRibbon(counts, 24);
 
@@ -308,15 +340,27 @@ export function renderDirectoryHeader(
     goldGlow(`◐ ${counts.working} rozpracováno`),
     violetGlow(`⏳ ${counts.waiting} čeká`),
     greenGlow(`✓ ${counts.done} hotovo`),
-    cyanGlow(`💡 ${ideas} nápadů`),
-    violetGlow(`• ${notes} poznámek`),
-  ].join("  ");
+  ];
+  if (counts.cancelled > 0) {
+    stats.push(slateGlow(`✗ ${counts.cancelled} zrušeno`));
+  }
+  if (counts.ideas > 0) {
+    stats.push(cyanGlow(`💡 ${counts.ideas} nápadů`));
+  }
+  if (counts.notes > 0) {
+    stats.push(violetGlow(`• ${counts.notes} poznámek`));
+  }
+
+  const itemsInfo =
+    counts.totalItems === counts.totalTasks
+      ? `${t.bold(String(counts.totalTasks))} úkolů`
+      : `${t.bold(String(counts.totalTasks))} úkolů (${counts.totalItems} položek celkem)`;
 
   return [
     t.bold(pinkGlow("  ◈ SPAI TASK & IDEA LEDGER")),
     `  ${violetGlow("Složka:")}   ${t.fg("dim", dirPath)}`,
     `  ${violetGlow("Ribbon:")}   ${ribbon}`,
-    `  ${violetGlow("Položky:")}  ${t.bold(String(index.records.length))} celkem  [${stats}]`,
+    `  ${violetGlow("Položky:")}  ${itemsInfo}  [${stats.join("  ")}]`,
     `  ${violetGlow("Změněno:")}  ${t.fg("dim", index.lastUpdated || "nikdy")}`,
   ];
 }
@@ -331,37 +375,12 @@ export function formatStatusLine(index?: SpaiIndex | null): string | undefined {
     return undefined;
   }
 
-  const todos = index.records.filter((r) => r.status === "todo").length;
-  const working = index.records.filter((r) => r.status === "working").length;
-  const waiting = index.records.filter((r) => r.status === "waiting").length;
-  const done = index.records.filter((r) => r.status === "done").length;
-  const cancelled = index.records.filter(
-    (r) => r.status === "cancelled",
-  ).length;
-  const ideas = index.records.filter(
-    (r) =>
-      r.status === "idea" ||
-      (r.type === "Idea" &&
-        r.status !== "todo" &&
-        r.status !== "working" &&
-        r.status !== "waiting" &&
-        r.status !== "done" &&
-        r.status !== "cancelled"),
-  ).length;
-  const notes = index.records.filter(
-    (r) =>
-      r.status === "note" ||
-      (r.type === "Note" &&
-        r.status !== "todo" &&
-        r.status !== "working" &&
-        r.status !== "waiting" &&
-        r.status !== "done" &&
-        r.status !== "cancelled" &&
-        r.status !== "inbox"),
-  ).length;
+  const counts = getStatusCounts(index);
   const highPrio = index.records.filter(
     (r) =>
       r.priority === "high" &&
+      r.type !== "Idea" &&
+      r.type !== "Note" &&
       (r.status === "todo" || r.status === "working" || r.status === "waiting"),
   ).length;
 
@@ -370,26 +389,26 @@ export function formatStatusLine(index?: SpaiIndex | null): string | undefined {
   if (highPrio > 0) {
     parts.push(coralGlow(`! ${highPrio}`));
   }
-  if (todos > 0) {
-    parts.push(pinkGlow(`. ${todos}`));
+  if (counts.todo > 0) {
+    parts.push(pinkGlow(`. ${counts.todo}`));
   }
-  if (working > 0) {
-    parts.push(goldGlow(`/ ${working}`));
+  if (counts.working > 0) {
+    parts.push(goldGlow(`/ ${counts.working}`));
   }
-  if (waiting > 0) {
-    parts.push(violetGlow(`/. ${waiting}`));
+  if (counts.waiting > 0) {
+    parts.push(violetGlow(`/. ${counts.waiting}`));
   }
-  if (done > 0) {
-    parts.push(greenGlow(`X ${done}`));
+  if (counts.done > 0) {
+    parts.push(greenGlow(`X ${counts.done}`));
   }
-  if (cancelled > 0) {
-    parts.push(slateGlow(`Z ${cancelled}`));
+  if (counts.cancelled > 0) {
+    parts.push(slateGlow(`Z ${counts.cancelled}`));
   }
-  if (ideas > 0) {
-    parts.push(cyanGlow(`? ${ideas}`));
+  if (counts.ideas > 0) {
+    parts.push(cyanGlow(`? ${counts.ideas}`));
   }
-  if (notes > 0) {
-    parts.push(violetGlow(`- ${notes}`));
+  if (counts.notes > 0) {
+    parts.push(violetGlow(`- ${counts.notes}`));
   }
 
   if (parts.length === 0) {
