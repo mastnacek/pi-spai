@@ -564,7 +564,9 @@ async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
   const working = index.records.filter((r) => r.status === "working").length;
   const waiting = index.records.filter((r) => r.status === "waiting").length;
   const done = index.records.filter((r) => r.status === "done").length;
-  const cancelled = index.records.filter((r) => r.status === "cancelled").length;
+  const cancelled = index.records.filter(
+    (r) => r.status === "cancelled",
+  ).length;
   const ideas = index.records.filter((r) => r.type === "Idea").length;
   const notes = index.records.filter((r) => r.type === "Note").length;
   const statusDashboard = formatStatusLine(index) || "(prázdné / skryté)";

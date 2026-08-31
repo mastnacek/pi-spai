@@ -311,7 +311,8 @@ export class KanbanBoardComponent implements Component {
       return this.cachedLines;
     }
 
-    const lines = width < 75 ? this.renderNarrow(width) : this.renderWide(width);
+    const lines =
+      width < 75 ? this.renderNarrow(width) : this.renderWide(width);
 
     this.cachedWidth = width;
     this.cachedLines = lines;
@@ -391,7 +392,9 @@ export class KanbanBoardComponent implements Component {
       lines.push(
         border("│") +
           padToWidth(
-            dividerGlow("   · Žádné úkoly v tomto sloupci · (stiskni [n] pro nový)"),
+            dividerGlow(
+              "   · Žádné úkoly v tomto sloupci · (stiskni [n] pro nový)",
+            ),
             innerWidth,
           ) +
           border("│"),

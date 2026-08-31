@@ -254,9 +254,7 @@ export function formatStatusLine(index?: SpaiIndex | null): string | undefined {
   const highPrio = index.records.filter(
     (r) =>
       r.priority === "high" &&
-      (r.status === "todo" ||
-        r.status === "working" ||
-        r.status === "waiting"),
+      (r.status === "todo" || r.status === "working" || r.status === "waiting"),
   ).length;
 
   const parts: string[] = [];
