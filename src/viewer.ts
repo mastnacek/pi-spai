@@ -81,7 +81,7 @@ export function renderSpaiRibbon(
 ): string {
   const total = counts.total;
   if (total === 0 || barWidth <= 0) {
-    return dividerGlow("░".repeat(Math.max(1, barWidth)));
+    return dividerGlow("⣿".repeat(Math.max(1, barWidth)));
   }
 
   const seg = (count: number): number => {
@@ -91,8 +91,8 @@ export function renderSpaiRibbon(
 
   let sDone = seg(counts.done);
   let sProg = seg(counts.working);
-  let sWait = seg(counts.waiting);
-  let sCancel = seg(counts.cancelled);
+  const sWait = seg(counts.waiting);
+  const sCancel = seg(counts.cancelled);
   let sPending = Math.max(0, barWidth - (sDone + sProg + sWait + sCancel));
 
   // Fix rounding overshoot
@@ -107,11 +107,11 @@ export function renderSpaiRibbon(
   const pct = Math.round((counts.done / total) * 100);
 
   const ribbon =
-    greenGlow("█".repeat(sDone)) +
-    goldGlow("█".repeat(sProg)) +
-    violetGlow("█".repeat(sWait)) +
-    pinkGlow("█".repeat(sPending)) +
-    slateGlow("█".repeat(sCancel));
+    greenGlow("⣿".repeat(sDone)) +
+    goldGlow("⣿".repeat(sProg)) +
+    violetGlow("⣿".repeat(sWait)) +
+    pinkGlow("⣿".repeat(sPending)) +
+    slateGlow("⣿".repeat(sCancel));
 
   const stats = ` ${greenGlow(`[${counts.done}/${total}]`)} ${dividerGlow(`${pct}%`)}`;
   return `${ribbon}${stats}`;
