@@ -27,7 +27,12 @@ import {
   searchRecords,
   updateRecordStatus,
 } from "./src/storage.js";
-import type { SpaiIndex, SpaiRecord, SpaiStatus } from "./src/types.js";
+import type {
+  SpaiIndex,
+  SpaiIndexEntry,
+  SpaiRecord,
+  SpaiStatus,
+} from "./src/types.js";
 import {
   dividerGlow,
   formatReadingMode,
@@ -69,6 +74,16 @@ const SUBCOMMANDS = [
     description: "Přepnout stav položky (todo ➔ working ➔ done ➔ cancelled)",
   },
   {
+    value: "realize",
+    label: "realize <id>",
+    description: "Vložit úkol/položku do promptu agenta pro realizaci",
+  },
+  {
+    value: "run",
+    label: "run <id>",
+    description: "Zkratka pro realize <id>",
+  },
+  {
     value: "search",
     label: "search <dotaz>",
     description: "Vyhledávat v úkolech, nápadech, štítkách a poznámkách",
@@ -95,6 +110,27 @@ async function getOrLoadIndex(cwd: string): Promise<SpaiIndex> {
 
 function invalidateCache(): void {
   cachedIndex = null;
+}
+
+function formatRealizePrompt(
+  record: SpaiRecord | SpaiIndexEntry,
+): string {
+  const isTask = "type" in record && record.type === "Todo";
+  const bodyText =
+    "body" in record && record.body ? `\n\n${record.body.trim()}` : "";
+  return `Realizuj ${isTask ? "úkol" : "položku"} ${record.id}: ${record.title}${bodyText}`;
+}
+
+function realizeRecord(
+  ctx: ExtensionCommandContext,
+  record: SpaiRecord | SpaiIndexEntry,
+): void {
+  const prompt = formatRealizePrompt(record);
+  ctx.ui.setEditorText(prompt);
+  ctx.ui.notify(
+    `Položka ${pinkGlow(record.id)} vložena do promptu pro realizaci.`,
+    "info",
+  );
 }
 
 async function updateStatusBar(
@@ -124,14 +160,16 @@ async function openReaderView(
   ctx: ExtensionCommandContext,
   initialRecord: SpaiRecord,
   initialReadingMode = true,
-): Promise<void> {
+): Promise<{ realize?: boolean; record?: SpaiRecord }> {
   if (!ctx.hasUI) {
     const text = initialReadingMode
       ? formatReadingMode(initialRecord)
       : initialRecord.rawContent || initialRecord.body;
     ctx.ui.notify(text, "info");
-    return;
+    return {};
   }
+
+  let realizedRecord: SpaiRecord | null = null;
 
   await ctx.ui.custom<void>((tui, theme, _kb, done) => {
     let readingMode = initialReadingMode;
@@ -159,7 +197,7 @@ async function openReaderView(
       container.addChild(
         new Text(
           violetGlow(
-            "m: formátování • 1..5: stav • x/mezerník/s: cyklus stavu • esc: zavřít",
+            "m: formátování • r: realize (odeslat agentovi) • 1..5: stav • x/mezerník/s: cyklus stavu • esc: zavřít",
           ),
           1,
           0,
@@ -192,10 +230,13 @@ async function openReaderView(
         container.invalidate();
       },
       handleInput: async (data) => {
-        if (matchesKey(data, "m") || matchesKey(data, "r")) {
+        if (matchesKey(data, "m")) {
           readingMode = !readingMode;
           rebuild();
           tui.requestRender();
+        } else if (matchesKey(data, "r")) {
+          realizedRecord = currentRecord;
+          done();
         } else if (
           matchesKey(data, "x") ||
           matchesKey(data, Key.space) ||
@@ -226,6 +267,13 @@ async function openReaderView(
       },
     };
   });
+
+  if (realizedRecord) {
+    realizeRecord(ctx, realizedRecord);
+    return { realize: true, record: realizedRecord };
+  }
+
+  return {};
 }
 
 async function openDirectoryExplorer(
@@ -258,6 +306,8 @@ async function openDirectoryExplorer(
       );
       return;
     }
+
+    let realizeSelectedId: string | null = null;
 
     const selectedId = await ctx.ui.custom<string | null>(
       (tui, theme, _kb, done) => {
@@ -298,7 +348,9 @@ async function openDirectoryExplorer(
         container.addChild(new Spacer(1));
         container.addChild(
           new Text(
-            violetGlow("↑↓: pohyb • enter: otevřít detail • esc: zpět"),
+            violetGlow(
+              "↑↓: pohyb • enter: detail • r: realize (řešit) • esc: zpět",
+            ),
             1,
             0,
           ),
@@ -309,6 +361,14 @@ async function openDirectoryExplorer(
           render: (w) => container.render(w),
           invalidate: () => container.invalidate(),
           handleInput: (data) => {
+            if (matchesKey(data, "r")) {
+              const selectedItem = selectList.getSelectedItem();
+              if (selectedItem) {
+                realizeSelectedId = selectedItem.value;
+                done(null);
+                return;
+              }
+            }
             selectList.handleInput(data);
             tui.requestRender();
           },
@@ -316,13 +376,24 @@ async function openDirectoryExplorer(
       },
     );
 
+    if (realizeSelectedId) {
+      const record = await readRecord(ctx.cwd, realizeSelectedId);
+      if (record) {
+        realizeRecord(ctx, record);
+      }
+      break;
+    }
+
     if (!selectedId) {
       break;
     }
 
     const record = await readRecord(ctx.cwd, selectedId);
     if (record) {
-      await openReaderView(ctx, record, true);
+      const res = await openReaderView(ctx, record, true);
+      if (res.realize) {
+        break;
+      }
       invalidateCache();
       await updateStatusBar(ctx);
     }
@@ -351,6 +422,7 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
     invalidateCache();
     index = await getOrLoadIndex(ctx.cwd);
     let openedRecord: SpaiRecord | null = null;
+    let realizeTargetRecord: SpaiRecord | null = null;
     let requestNew = false;
 
     await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
@@ -359,6 +431,10 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
         index,
         onOpenRecord: (rec: SpaiRecord) => {
           openedRecord = rec;
+          done();
+        },
+        onRealizeRecord: (rec: SpaiRecord) => {
+          realizeTargetRecord = rec;
           done();
         },
         onNewTask: () => {
@@ -383,6 +459,11 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
       };
     });
 
+    if (realizeTargetRecord) {
+      realizeRecord(ctx, realizeTargetRecord);
+      break;
+    }
+
     if (requestNew) {
       await handleNew("", ctx);
       invalidateCache();
@@ -391,7 +472,10 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
     }
 
     if (openedRecord) {
-      await openReaderView(ctx, openedRecord, true);
+      const res = await openReaderView(ctx, openedRecord, true);
+      if (res.realize) {
+        break;
+      }
       invalidateCache();
       await updateStatusBar(ctx);
       continue;
@@ -524,6 +608,30 @@ async function handleToggle(
   }
 }
 
+async function handleRealize(
+  remainder: string,
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  const tokens = remainder.trim().split(/\s+/).filter(Boolean);
+  const idQuery = tokens[0];
+
+  if (!idQuery) {
+    ctx.ui.notify(
+      "Použití: `/spai realize <id>` (např. `/spai realize SPAI-001`)",
+      "warning",
+    );
+    return;
+  }
+
+  const record = await readRecord(ctx.cwd, idQuery);
+  if (!record) {
+    ctx.ui.notify(`Položka nenalezena: "${idQuery}"`, "error");
+    return;
+  }
+
+  realizeRecord(ctx, record);
+}
+
 async function handleSearch(
   remainder: string,
   ctx: ExtensionCommandContext,
@@ -596,9 +704,11 @@ function handleHelp(ctx: ExtensionCommandContext): void {
     "SPAI Task, Idea & Note Ledger pro Pi coding agent (100% kompatibilní s mozek_rust).",
     "",
     "### Dostupné příkazy:",
-    "- `/spai list [all|todo|idea|note|done]` — Interaktivní TUI přehled a tabulka položek.",
+    "- `/spai board` — Interaktivní Kanban tabule (zkratka `r` = realize).",
+    "- `/spai list [all|todo|idea|note|done]` — TUI přehled a tabulka položek (zkratka `r` = realize).",
+    "- `/spai realize <id>` (nebo `/spai run <id>`) — Odeslat úkol/poznámku do promptu agenta pro realizaci.",
     "- `/spai new <text>` — Rychlý záchyt úkolu, nápadu nebo poznámky se SPAI prefixem.",
-    "- `/spai show <id> [--raw]` — Zobrazit detail v čistém režimu čtení se SPAI ikonami.",
+    "- `/spai show <id> [--raw]` — Zobrazit detail v čistém režimu čtení (zkratka `r` = realize).",
     "- `/spai toggle <id>` — Přepnout stav úkolu (todo ➔ working ➔ done).",
     "- `/spai search <dotaz>` — Hledat v úkolech, nápadech a štítcích.",
     "- `/spai status` — Zobrazit statistiky a počty úkolů.",
@@ -688,8 +798,8 @@ async function getCompletions(
       return filtered.length > 0 ? filtered : null;
     }
 
-    // Subcommand: show
-    if (cmd === "show") {
+    // Subcommand: show / realize / run
+    if (cmd === "show" || cmd === "realize" || cmd === "run") {
       try {
         const index = await getOrLoadIndex(process.cwd());
         const query = (tokens[1] || "").toLowerCase();
@@ -701,7 +811,7 @@ async function getCompletions(
               r.title.toLowerCase().includes(query),
           )
           .map((r) => ({
-            value: `show ${r.id}`,
+            value: `${cmd} ${r.id}`,
             label: `${r.id} — ${r.title}`,
             description: `[${r.type} - ${r.status}]`,
           }));
@@ -894,6 +1004,10 @@ export default function (pi: ExtensionAPI): void {
           break;
         case "toggle":
           await handleToggle(remainder, ctx);
+          break;
+        case "realize":
+        case "run":
+          await handleRealize(remainder, ctx);
           break;
         case "search":
           await handleSearch(remainder, ctx);

@@ -82,8 +82,9 @@ test("KanbanBoardComponent rotate modulo loops across cancelled to todo", () => 
       assert.equal(statuses[colIdx], "cancelled");
 });
 
-test("KanbanBoardComponent accepts onStatusChange callback option", () => {
+test("KanbanBoardComponent accepts onStatusChange and onRealizeRecord callback options", () => {
       let changed = false;
+      let realized = false;
       const index: SpaiIndex = {
             version: 1,
             lastUpdated: "2026-08-27 10:50:45",
@@ -97,8 +98,13 @@ test("KanbanBoardComponent accepts onStatusChange callback option", () => {
             onStatusChange: () => {
                   changed = true;
             },
+            onRealizeRecord: () => {
+                  realized = true;
+            },
       });
 
       assert.ok(board);
       assert.equal(changed, false);
+      assert.equal(realized, false);
 });
+

@@ -108,12 +108,14 @@ export class KanbanBoardComponent implements Component {
   private cachedLines?: string[];
   private onRequestRender?: () => void;
   private onStatusChange?: (taskId: string, targetStatus: SpaiStatus) => void;
+  private onRealizeRecord?: (record: SpaiRecord) => void;
   private isOpening = false;
 
   constructor(options: {
     cwd: string;
     index: SpaiIndex;
     onOpenRecord?: (record: SpaiRecord) => void;
+    onRealizeRecord?: (record: SpaiRecord) => void;
     onNewTask?: () => void;
     onClose: () => void;
     onStatusChange?: (taskId: string, targetStatus: SpaiStatus) => void;
@@ -122,6 +124,7 @@ export class KanbanBoardComponent implements Component {
     this.cwd = options.cwd;
     this.index = options.index;
     this.onOpenRecord = options.onOpenRecord;
+    this.onRealizeRecord = options.onRealizeRecord;
     this.onNewTask = options.onNewTask;
     this.onClose = options.onClose;
     this.onStatusChange = options.onStatusChange;
@@ -288,6 +291,23 @@ export class KanbanBoardComponent implements Component {
       matchesKey(data, Key.shift("h"))
     ) {
       void this.moveSelectedTask("left");
+    }
+    // Realize task with agent: r
+    else if (data === "r") {
+      const entry = this.getSelectedRecord();
+      if (entry && this.onRealizeRecord && !this.isOpening) {
+        this.isOpening = true;
+        void readRecord(this.cwd, entry.id)
+          .then((rec) => {
+            this.isOpening = false;
+            if (rec && this.onRealizeRecord) {
+              this.onRealizeRecord(rec);
+            }
+          })
+          .catch(() => {
+            this.isOpening = false;
+          });
+      }
     }
     // Open detail on Enter
     else if (matchesKey(data, Key.enter)) {
@@ -505,7 +525,7 @@ export class KanbanBoardComponent implements Component {
     );
 
     // 9. Compact Hotkeys Line
-    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: skok  ${cyanGlow("Space")}: rotace  ${cyanGlow("n")}: nový  ${cyanGlow("enter")}: detail`;
+    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: stav  ${cyanGlow("r")}: realize  ${cyanGlow("enter")}: detail  ${cyanGlow("esc")}: zavřít`;
     lines.push(border("│") + padToWidth(hintText, innerWidth) + border("│"));
 
     // 10. Bottom Outer Frame
@@ -554,7 +574,7 @@ export class KanbanBoardComponent implements Component {
     );
 
     // 3. Compact Hints / Hotkeys Line
-    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: skok stavu  ${cyanGlow("Space")}: rotace  ${cyanGlow("n")}: nový  ${cyanGlow("enter")}: detail  ${cyanGlow("esc")}: zavřít`;
+    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: stav  ${cyanGlow("r")}: realize (řešit)  ${cyanGlow("enter")}: detail  ${cyanGlow("n")}: nový  ${cyanGlow("esc")}: zavřít`;
     lines.push(border("│") + padToWidth(hintText, innerWidth) + border("│"));
 
     // 4. Header Top Grid Border
