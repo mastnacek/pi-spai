@@ -159,7 +159,7 @@ async function openReaderView(
       container.addChild(
         new Text(
           violetGlow(
-            "m: formátování • x/mezerník: přepnout stav (cyklus) • s: vybrat stav • esc: zavřít",
+            "m: formátování • 1..5: stav • x/mezerník/s: cyklus stavu • esc: zavřít",
           ),
           1,
           0,
@@ -169,6 +169,21 @@ async function openReaderView(
     };
 
     rebuild();
+
+    const setStatus = async (status: SpaiStatus) => {
+      const updated = await updateRecordStatus(
+        ctx.cwd,
+        currentRecord.id,
+        status,
+      );
+      if (updated) {
+        currentRecord = updated;
+        invalidateCache();
+        await updateStatusBar(ctx);
+        rebuild();
+        tui.requestRender();
+      }
+    };
 
     return {
       render: (w) => container.render(w),
@@ -181,59 +196,30 @@ async function openReaderView(
           readingMode = !readingMode;
           rebuild();
           tui.requestRender();
-        } else if (matchesKey(data, "x") || matchesKey(data, Key.space)) {
+        } else if (
+          matchesKey(data, "x") ||
+          matchesKey(data, Key.space) ||
+          matchesKey(data, "s")
+        ) {
           const nextStatus = cycleNextStatus(
             currentRecord.status,
             currentRecord.type,
           );
-          const updated = await updateRecordStatus(
-            ctx.cwd,
-            currentRecord.id,
-            nextStatus,
-          );
-          if (updated) {
-            currentRecord = updated;
-            invalidateCache();
-            await updateStatusBar(ctx);
-            rebuild();
-            tui.requestRender();
-          }
-        } else if (matchesKey(data, "s")) {
-          const statuses: SpaiStatus[] = [
-            "todo",
-            "working",
-            "waiting",
-            "done",
-            "cancelled",
-            "idea",
-            "note",
-          ];
-          const choices = statuses.map(
-            (st) => `${st} — ${renderSpaiStatusBadge(st)}`,
-          );
-          const picked = await ctx.ui.select(
-            `Zvolte stav pro ${currentRecord.id}:`,
-            choices,
-          );
-          if (picked) {
-            const pickedIdx = choices.indexOf(picked);
-            const chosenStatus =
-              pickedIdx === -1 ? undefined : statuses[pickedIdx];
-            if (chosenStatus) {
-              const updated = await updateRecordStatus(
-                ctx.cwd,
-                currentRecord.id,
-                chosenStatus,
-              );
-              if (updated) {
-                currentRecord = updated;
-                invalidateCache();
-                await updateStatusBar(ctx);
-                rebuild();
-                tui.requestRender();
-              }
-            }
-          }
+          await setStatus(nextStatus);
+        } else if (data === "1" || data === "t") {
+          await setStatus("todo");
+        } else if (data === "2" || data === "w") {
+          await setStatus("working");
+        } else if (data === "3" || data === "p") {
+          await setStatus("waiting");
+        } else if (data === "4" || data === "d") {
+          await setStatus("done");
+        } else if (data === "5" || data === "c" || data === "z") {
+          await setStatus("cancelled");
+        } else if (data === "6" || data === "i") {
+          await setStatus("idea");
+        } else if (data === "7" || data === "n") {
+          await setStatus("note");
         } else if (matchesKey(data, Key.escape) || matchesKey(data, "q")) {
           done();
         }
@@ -246,27 +232,33 @@ async function openDirectoryExplorer(
   ctx: ExtensionCommandContext,
   statusFilter?: SpaiStatus,
 ): Promise<void> {
-  const index = await getOrLoadIndex(ctx.cwd);
+  invalidateCache();
   const spaiDir = getSpaiDir(ctx.cwd);
 
-  const displayedRecords = statusFilter
-    ? index.records.filter((r) => r.status === statusFilter)
-    : index.records;
-
-  if (displayedRecords.length === 0) {
-    ctx.ui.notify(
-      "V docs/spai/ nebyly nalezeny žádné odpovídající položky. Vytvořte novou přes `/spai new <text>`.",
-      "info",
-    );
-    return;
-  }
-
   if (!ctx.hasUI) {
+    const index = await getOrLoadIndex(ctx.cwd);
     ctx.ui.notify(renderDirectoryTable(index, spaiDir), "info");
     return;
   }
 
   while (true) {
+    invalidateCache();
+    const index = await getOrLoadIndex(ctx.cwd);
+
+    const displayedRecords = statusFilter
+      ? index.records.filter((r) => r.status === statusFilter)
+      : index.records;
+
+    if (displayedRecords.length === 0) {
+      ctx.ui.notify(
+        statusFilter
+          ? `V docs/spai/ nebyly nalezeny žádné položky se stavem "${statusFilter}".`
+          : "V docs/spai/ nebyly nalezeny žádné položky. Vytvořte novou přes `/spai new <text>`.",
+        "info",
+      );
+      return;
+    }
+
     const selectedId = await ctx.ui.custom<string | null>(
       (tui, theme, _kb, done) => {
         const container = new Container();
@@ -331,6 +323,8 @@ async function openDirectoryExplorer(
     const record = await readRecord(ctx.cwd, selectedId);
     if (record) {
       await openReaderView(ctx, record, true);
+      invalidateCache();
+      await updateStatusBar(ctx);
     }
   }
 }
@@ -354,6 +348,7 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
   }
 
   while (true) {
+    invalidateCache();
     index = await getOrLoadIndex(ctx.cwd);
     let openedRecord: SpaiRecord | null = null;
     let requestNew = false;
@@ -371,6 +366,10 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
           done();
         },
         onClose: () => done(),
+        onStatusChange: () => {
+          invalidateCache();
+          void updateStatusBar(ctx);
+        },
         onRequestRender: () => {
           tui.requestRender();
           void updateStatusBar(ctx);
@@ -408,7 +407,7 @@ async function handleList(
   ctx: ExtensionCommandContext,
 ): Promise<void> {
   const arg = remainder.trim().toLowerCase();
-  if (!arg || arg === "board" || arg === "kanban") {
+  if (arg === "board" || arg === "kanban") {
     await openKanbanBoard(ctx);
     return;
   }
@@ -875,10 +874,11 @@ export default function (pi: ExtensionAPI): void {
       ctx: ExtensionCommandContext,
     ): Promise<void> => {
       const trimmed = args.trim();
-      const [subcommand = "list", ...rest] = trimmed.split(/\s+/);
-      const remainder = rest.join(" ").trim();
+      const tokens = trimmed.split(/\s+/).filter(Boolean);
+      const subcommand = (tokens[0] ?? "list").toLowerCase();
+      const remainder = tokens.slice(1).join(" ").trim();
 
-      switch (subcommand.toLowerCase()) {
+      switch (subcommand) {
         case "board":
         case "kanban":
           await openKanbanBoard(ctx);

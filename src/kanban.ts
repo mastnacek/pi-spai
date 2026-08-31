@@ -107,6 +107,8 @@ export class KanbanBoardComponent implements Component {
   private cachedWidth?: number;
   private cachedLines?: string[];
   private onRequestRender?: () => void;
+  private onStatusChange?: (taskId: string, targetStatus: SpaiStatus) => void;
+  private isOpening = false;
 
   constructor(options: {
     cwd: string;
@@ -114,6 +116,7 @@ export class KanbanBoardComponent implements Component {
     onOpenRecord?: (record: SpaiRecord) => void;
     onNewTask?: () => void;
     onClose: () => void;
+    onStatusChange?: (taskId: string, targetStatus: SpaiStatus) => void;
     onRequestRender?: () => void;
   }) {
     this.cwd = options.cwd;
@@ -121,6 +124,7 @@ export class KanbanBoardComponent implements Component {
     this.onOpenRecord = options.onOpenRecord;
     this.onNewTask = options.onNewTask;
     this.onClose = options.onClose;
+    this.onStatusChange = options.onStatusChange;
     this.onRequestRender = options.onRequestRender;
     this.clampSelection();
   }
@@ -180,6 +184,7 @@ export class KanbanBoardComponent implements Component {
       this.selectedIndices[targetColIdx] = newIdx >= 0 ? newIdx : 0;
       this.clampSelection();
       this.invalidate();
+      this.onStatusChange?.(taskId, targetStatus);
       this.onRequestRender?.();
     }
   }
@@ -287,13 +292,18 @@ export class KanbanBoardComponent implements Component {
     // Open detail on Enter
     else if (matchesKey(data, Key.enter)) {
       const entry = this.getSelectedRecord();
-      if (entry && this.onOpenRecord) {
-        void (async () => {
-          const rec = await readRecord(this.cwd, entry.id);
-          if (rec && this.onOpenRecord) {
-            this.onOpenRecord(rec);
-          }
-        })();
+      if (entry && this.onOpenRecord && !this.isOpening) {
+        this.isOpening = true;
+        void readRecord(this.cwd, entry.id)
+          .then((rec) => {
+            this.isOpening = false;
+            if (rec && this.onOpenRecord) {
+              this.onOpenRecord(rec);
+            }
+          })
+          .catch(() => {
+            this.isOpening = false;
+          });
       }
     }
     // Add new task: n / a

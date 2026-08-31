@@ -81,3 +81,24 @@ test("KanbanBoardComponent rotate modulo loops across cancelled to todo", () => 
       assert.equal(colIdx, 4);
       assert.equal(statuses[colIdx], "cancelled");
 });
+
+test("KanbanBoardComponent accepts onStatusChange callback option", () => {
+      let changed = false;
+      const index: SpaiIndex = {
+            version: 1,
+            lastUpdated: "2026-08-27 10:50:45",
+            records: [],
+      };
+
+      const board = new KanbanBoardComponent({
+            cwd: process.cwd(),
+            index,
+            onClose: () => {},
+            onStatusChange: () => {
+                  changed = true;
+            },
+      });
+
+      assert.ok(board);
+      assert.equal(changed, false);
+});
