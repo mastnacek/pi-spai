@@ -977,6 +977,9 @@ function registerTools(pi: ExtensionAPI): void {
 
 export default function (pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => handleSessionStart(ctx));
+  // Drop the session-scoped index cache on shutdown (AGENTS.md §5/§6);
+  // it is rebuilt lazily on the next session_start.
+  pi.on("session_shutdown", () => invalidateCache());
   registerTools(pi);
 
   pi.registerCommand("spai", {
