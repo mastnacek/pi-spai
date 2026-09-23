@@ -988,10 +988,21 @@ function registerTools(pi: ExtensionAPI): void {
 }
 
 export default function (pi: ExtensionAPI): void {
-  pi.on("session_start", (_event, ctx) => handleSessionStart(ctx));
+  /** Unsubscribers from every `pi.on()`; drained on session_shutdown (AGENTS §5). */
+  const unsubscribers: Array<() => void> = [];
+
+  /** Retain a `pi.on()` return value; older engine typings declare it void. */
+  const track = (result: unknown): void => {
+    if (typeof result === "function") unsubscribers.push(result as () => void);
+  };
+
+  track(pi.on("session_start", (_event, ctx) => handleSessionStart(ctx)));
   // Drop the session-scoped index cache on shutdown (AGENTS.md §5/§6);
   // it is rebuilt lazily on the next session_start.
-  pi.on("session_shutdown", () => invalidateCache());
+  pi.on("session_shutdown", () => {
+    while (unsubscribers.length > 0) unsubscribers.pop()?.();
+    invalidateCache();
+  });
   registerTools(pi);
 
   pi.registerCommand("spai", {
