@@ -22,11 +22,12 @@ import {
   createSpaiAutocompleteProvider,
   getSpaiNewCompletions,
 } from "./src/autocomplete.js";
-import { loadAvailableProjects } from "./src/projects.js";
+import { discoverAllProjects, loadAvailableProjects } from "./src/projects.js";
 import {
   ensureSpaiDir,
   getIndexPath,
   getSpaiDir,
+  loadAllProjectsIndex,
   loadIndex,
   readRecord,
   saveRecord,
@@ -418,12 +419,14 @@ async function openDirectoryExplorer(
 
 async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
   invalidateCache();
-  let index = await getOrLoadIndex(ctx.cwd);
+  const allProjects = discoverAllProjects();
+  const { index: allIndex } = await loadAllProjectsIndex(allProjects);
+  let index = allIndex;
   const spaiDir = getSpaiDir(ctx.cwd);
 
   if (index.records.length === 0) {
     ctx.ui.notify(
-      "V docs/spai/ nebyly nalezeny žádné úkoly. Vytvořte nový přes `/spai new <text>`.",
+      "Nebyly nalezeny žádné SPAI úkoly v žádném projektu. Vytvořte nový přes `/spai new <text>`.",
       "info",
     );
     return;
@@ -438,7 +441,8 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
 
   while (true) {
     invalidateCache();
-    index = await getOrLoadIndex(ctx.cwd);
+    const refreshed = await loadAllProjectsIndex(discoverAllProjects());
+    index = refreshed.index;
     let openedRecord: SpaiRecord | null = null;
     let realizeTargetRecord: SpaiRecord | null = null;
     let requestNew = false;
@@ -447,6 +451,12 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
       const board = new KanbanBoardComponent({
         cwd: ctx.cwd,
         index,
+        projects: refreshed.projectsWithCounts,
+        onReloadIndex: async () => {
+          invalidateCache();
+          const fresh = await loadAllProjectsIndex(discoverAllProjects());
+          return fresh.index;
+        },
         onOpenRecord: (rec: SpaiRecord) => {
           openedRecord = rec;
           done();

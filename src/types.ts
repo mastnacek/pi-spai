@@ -73,6 +73,8 @@ export interface SpaiIndexEntry {
  priority?: SpaiPriority;
  deadline?: string;
  project?: string;
+ projectPath?: string;
+ filePath?: string;
  file: string;
 }
 

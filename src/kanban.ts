@@ -6,6 +6,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { loadIndex, readRecord, updateRecordStatus } from "./storage.js";
+import type { ProjectSummary } from "./projects.js";
 import type {
   SpaiIndex,
   SpaiIndexEntry,
@@ -101,6 +102,11 @@ function computeColWidths(totalWidth: number, numCols: number): number[] {
 export class KanbanBoardComponent implements Component {
   private cwd: string;
   private index: SpaiIndex;
+  private projects: ProjectSummary[];
+  private activeProjectFilter = "ALL";
+  private mode: "board" | "project_picker" = "board";
+  private pickerIdx = 0;
+  private onReloadIndex?: () => Promise<SpaiIndex>;
   private focusCol = 0;
   private selectedIndices: number[] = [0, 0, 0, 0, 0];
   private onOpenRecord?: (record: SpaiRecord) => void;
@@ -116,6 +122,8 @@ export class KanbanBoardComponent implements Component {
   constructor(options: {
     cwd: string;
     index: SpaiIndex;
+    projects?: ProjectSummary[];
+    onReloadIndex?: () => Promise<SpaiIndex>;
     onOpenRecord?: (record: SpaiRecord) => void;
     onRealizeRecord?: (record: SpaiRecord) => void;
     onNewTask?: () => void;
@@ -125,6 +133,8 @@ export class KanbanBoardComponent implements Component {
   }) {
     this.cwd = options.cwd;
     this.index = options.index;
+    this.projects = options.projects ?? [];
+    this.onReloadIndex = options.onReloadIndex;
     this.onOpenRecord = options.onOpenRecord;
     this.onRealizeRecord = options.onRealizeRecord;
     this.onNewTask = options.onNewTask;
@@ -140,8 +150,94 @@ export class KanbanBoardComponent implements Component {
     this.invalidate();
   }
 
-  private getColumnTasks(status: SpaiStatus): SpaiIndexEntry[] {
+  /** Records visible under the active project filter. */
+  public getVisibleRecords(): SpaiIndexEntry[] {
+    if (this.activeProjectFilter === "ALL") {
+      return this.index.records;
+    }
+    const f = this.activeProjectFilter.toLowerCase();
     return this.index.records.filter(
+      (r) =>
+        r.project?.toLowerCase() === f ||
+        r.projectPath?.toLowerCase() === f,
+    );
+  }
+
+  public getActiveProjectFilter(): string {
+    return this.activeProjectFilter;
+  }
+
+  /** ALL -> project 1 -> ... -> ALL cycle, ported from spai.ledger. */
+  public toggleProjectFilter(direction: "next" | "prev" = "next"): void {
+    const options = [
+      "ALL",
+      ...this.projects
+        .filter((p) => p.hasSpai !== false)
+        .map((p) => p.name),
+    ];
+    if (options.length <= 1) return;
+    const idx = options.findIndex(
+      (o) => o.toLowerCase() === this.activeProjectFilter.toLowerCase(),
+    );
+    const nextIdx =
+      direction === "next"
+        ? (idx + 1) % options.length
+        : (idx - 1 + options.length) % options.length;
+    this.activeProjectFilter = options[nextIdx] ?? "ALL";
+    this.clampSelection();
+    this.invalidate();
+    this.onRequestRender?.();
+  }
+
+  private getPickerOptions(): Array<{ label: string; value: string }> {
+    return [
+      { label: "★ ALL PROJECTS", value: "ALL" },
+      ...this.projects
+        .filter((p) => p.hasSpai !== false)
+        .map((p) => ({
+          label: `📁 ${p.name} (${p.taskCount ?? 0})`,
+          value: p.name,
+        })),
+    ];
+  }
+
+  private handlePickerInput(data: string): void {
+    const options = this.getPickerOptions();
+    if (matchesKey(data, Key.escape) || data === "q") {
+      this.mode = "board";
+      this.invalidate();
+      this.onRequestRender?.();
+    } else if (matchesKey(data, Key.up) || data === "k") {
+      if (this.pickerIdx > 0) {
+        this.pickerIdx--;
+        this.invalidate();
+        this.onRequestRender?.();
+      }
+    } else if (matchesKey(data, Key.down) || data === "j") {
+      if (this.pickerIdx < options.length - 1) {
+        this.pickerIdx++;
+        this.invalidate();
+        this.onRequestRender?.();
+      }
+    } else if (matchesKey(data, Key.enter)) {
+      const opt = options[this.pickerIdx];
+      this.activeProjectFilter = opt?.value ?? "ALL";
+      this.mode = "board";
+      this.clampSelection();
+      this.invalidate();
+      this.onRequestRender?.();
+    }
+  }
+
+  private getFilterLabel(): string {
+    return this.activeProjectFilter === "ALL"
+      ? "★ ALL PROJECTS"
+      : `📁 ${this.activeProjectFilter}`;
+  }
+
+  private getColumnTasks(status: SpaiStatus): SpaiIndexEntry[] {
+    const visible = this.getVisibleRecords();
+    return visible.filter(
       (r) =>
         r.status === status &&
         (r.type === "Todo" ||
@@ -188,9 +284,12 @@ export class KanbanBoardComponent implements Component {
     if (targetColIdx === -1) return;
 
     const taskId = currentEntry.id;
-    const updated = await updateRecordStatus(this.cwd, taskId, targetStatus);
+    const targetCwd = currentEntry.projectPath || this.cwd;
+    const updated = await updateRecordStatus(targetCwd, taskId, targetStatus);
     if (updated) {
-      this.index = await loadIndex(this.cwd);
+      this.index = this.onReloadIndex
+        ? await this.onReloadIndex()
+        : await loadIndex(targetCwd);
       this.focusCol = targetColIdx;
       const targetTasks = this.getColumnTasks(targetStatus);
       const newIdx = targetTasks.findIndex((t) => t.id === taskId);
@@ -221,17 +320,31 @@ export class KanbanBoardComponent implements Component {
   }
 
   handleInput(data: string): void {
-    // 1-key instant status move: 1..5, t, w, p, d, c, z
+    // Project picker modal intercepts all input
+    if (this.mode === "project_picker") {
+      this.handlePickerInput(data);
+      return;
+    }
+    // 1-key instant status move: 1..5, t, w, P, d, c, z
     if (data === "1" || data === "t") {
       void this.moveToStatus("todo");
     } else if (data === "2" || data === "w") {
       void this.moveToStatus("working");
-    } else if (data === "3" || data === "p") {
+    } else if (data === "3" || data === "P") {
       void this.moveToStatus("waiting");
     } else if (data === "4" || data === "d") {
       void this.moveToStatus("done");
     } else if (data === "5" || data === "c" || data === "z") {
       void this.moveToStatus("cancelled");
+    }
+    // Cycle project filter: p (next) / o (picker)
+    else if (data === "p") {
+      this.toggleProjectFilter("next");
+    } else if (data === "o") {
+      this.mode = "project_picker";
+      this.pickerIdx = 0;
+      this.invalidate();
+      this.onRequestRender?.();
     }
     // Column navigation: Left / Right, h / l
     else if (matchesKey(data, Key.left) || data === "h") {
@@ -307,7 +420,7 @@ export class KanbanBoardComponent implements Component {
       const entry = this.getSelectedRecord();
       if (entry && this.onRealizeRecord && !this.isOpening) {
         this.isOpening = true;
-        void readRecord(this.cwd, entry.id)
+        void readRecord(entry.projectPath || this.cwd, entry.id)
           .then((rec) => {
             this.isOpening = false;
             if (rec && this.onRealizeRecord) {
@@ -324,7 +437,7 @@ export class KanbanBoardComponent implements Component {
       const entry = this.getSelectedRecord();
       if (entry && this.onOpenRecord && !this.isOpening) {
         this.isOpening = true;
-        void readRecord(this.cwd, entry.id)
+        void readRecord(entry.projectPath || this.cwd, entry.id)
           .then((rec) => {
             this.isOpening = false;
             if (rec && this.onOpenRecord) {
@@ -347,6 +460,10 @@ export class KanbanBoardComponent implements Component {
   }
 
   render(width: number): string[] {
+    if (this.mode === "project_picker") {
+      return this.renderProjectPicker(width);
+    }
+
     if (this.cachedLines && this.cachedWidth === width) {
       return this.cachedLines;
     }
@@ -356,6 +473,48 @@ export class KanbanBoardComponent implements Component {
 
     this.cachedWidth = width;
     this.cachedLines = lines;
+    return lines;
+  }
+
+  private renderProjectPicker(width: number): string[] {
+    const lines: string[] = [];
+    const innerWidth = Math.max(10, width - 2);
+    const border = (s: string) => dividerGlow(s);
+    const options = this.getPickerOptions();
+
+    lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
+    lines.push(
+      border("│") +
+        padToWidth(
+          defaultBold(violetGlow(" ◈ VÝBĚR PROJEKTU ◈")),
+          innerWidth,
+        ) +
+        border("│"),
+    );
+    lines.push(border(`├${"─".repeat(innerWidth)}┤`));
+
+    options.forEach((opt, idx) => {
+      const marker = opt.value === "ALL" ? "★" : "📁";
+      const raw = ` ${idx === this.pickerIdx ? "▶" : " "} ${marker} ${opt.label}`;
+      const styled =
+        idx === this.pickerIdx
+          ? defaultBold(cyanGlow(truncateToWidth(raw, innerWidth, "…")))
+          : dividerGlow(truncateToWidth(raw, innerWidth, "…"));
+      lines.push(border("│") + padToWidth(styled, innerWidth) + border("│"));
+    });
+
+    lines.push(border(`├${"─".repeat(innerWidth)}┤`));
+    lines.push(
+      border("│") +
+        padToWidth(
+          cyanGlow(
+            "  ↑/↓ nebo j/k: výběr   enter: potvrdit   esc/q: zavřít",
+          ),
+          innerWidth,
+        ) +
+        border("│"),
+    );
+    lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
     return lines;
   }
 
@@ -369,12 +528,14 @@ export class KanbanBoardComponent implements Component {
     lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
 
     // 2. Title & Live Stats Banner
-    const counts = getStatusCounts(this.index);
+    const counts = getStatusCounts({ records: this.getVisibleRecords() } as SpaiIndex);
     const activeTasks = counts.todo + counts.working;
     const doneTasks = counts.done;
     const totalTasks = counts.totalTasks;
 
-    const titleLeft = defaultBold(pinkGlow(" ◈ SPAI BOARD ◈"));
+    const titleLeft = defaultBold(
+      pinkGlow(` ◈ SPAI BOARD · ${this.getFilterLabel()} ◈`),
+    );
     const statsRight = `${goldGlow(`⚡${activeTasks}`)} ${greenGlow(`✓${doneTasks}`)} ${violetGlow(`Σ${totalTasks}`)} `;
     const bannerSpaces = Math.max(
       1,
@@ -558,12 +719,14 @@ export class KanbanBoardComponent implements Component {
     lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
 
     // 2. Title & Live Stats Banner
-    const countsWide = getStatusCounts(this.index);
+    const countsWide = getStatusCounts({ records: this.getVisibleRecords() } as SpaiIndex);
     const activeTasks = countsWide.todo + countsWide.working;
     const doneTasks = countsWide.done;
     const totalTasks = countsWide.totalTasks;
 
-    const titleLeft = defaultBold(pinkGlow(" ◈ SPAI KANBAN BOARD ◈"));
+    const titleLeft = defaultBold(
+      pinkGlow(` ◈ SPAI KANBAN · ${this.getFilterLabel()} ◈`),
+    );
     const extraInfo =
       countsWide.ideas > 0 || countsWide.notes > 0
         ? ` (${countsWide.totalItems} celkem)`
@@ -590,7 +753,7 @@ export class KanbanBoardComponent implements Component {
     lines.push(border("│") + padToWidth(ribbonWide, innerWidth) + border("│"));
 
     // 4. Compact Hints / Hotkeys Line
-    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: stav  ${cyanGlow("r")}: realize (řešit)  ${cyanGlow("enter")}: detail  ${cyanGlow("n")}: nový  ${cyanGlow("esc")}: zavřít`;
+    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: stav  ${cyanGlow("p")}: projekt  ${cyanGlow("o")}: výběr  ${cyanGlow("r")}: realize  ${cyanGlow("enter")}: detail  ${cyanGlow("n")}: nový  ${cyanGlow("esc")}: zavřít`;
     lines.push(border("│") + padToWidth(hintText, innerWidth) + border("│"));
 
     // 4. Header Top Grid Border

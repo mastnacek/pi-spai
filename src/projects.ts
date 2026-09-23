@@ -7,6 +7,121 @@ export interface ProjectSummary {
   path: string;
   type?: string;
   description?: string;
+  spaiDir?: string;
+  hasSpai?: boolean;
+  taskCount?: number;
+}
+
+export function normalizePath(p: string): string {
+  const norm = normalize(resolve(p)).replace(/\\/g, "/");
+  if (norm.length > 3 && norm.endsWith("/")) {
+    return norm.slice(0, -1);
+  }
+  return norm;
+}
+
+export function getSpaiDirForProject(projectPath: string): string {
+  const candidates = [
+    join(projectPath, "docs", "spai"),
+    join(projectPath, ".pi", "spai"),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return normalizePath(c);
+  }
+  return normalizePath(join(projectPath, "docs", "spai"));
+}
+
+/**
+ * Scans filesystem root folders (e.g. D:/01_programovani) for projects with
+ * code markers or SPAI directories. Ported from herdr spai.ledger plugin.
+ */
+function scanRootDirectories(): string[] {
+  const candidates = [
+    "D:/01_programovani",
+    "C:/01_programovani",
+    join(homedir(), "projects"),
+    join(homedir(), "workspace"),
+    join(homedir(), "dev"),
+    dirname(process.cwd()),
+  ];
+
+  const results: string[] = [];
+  for (const root of candidates) {
+    if (existsSync(root)) {
+      try {
+        const entries = readdirSync(root, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && !entry.name.startsWith(".")) {
+            results.push(normalizePath(join(root, entry.name)));
+          }
+        }
+      } catch {
+        // Ignore unreadable root
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Aggregated multi-project discovery: pi-projects cache + manual config +
+ * filesystem root scan. Only keeps projects with code markers or SPAI data.
+ */
+export function discoverAllProjects(): ProjectSummary[] {
+  const projectMap = new Map<string, ProjectSummary>();
+
+  // 1. Current working directory always included
+  const currentCwd = normalizePath(process.cwd());
+  const currentSpai = getSpaiDirForProject(currentCwd);
+  projectMap.set(currentCwd, {
+    name: basename(currentCwd),
+    path: currentCwd,
+    spaiDir: currentSpai,
+    hasSpai: existsSync(currentSpai),
+  });
+
+  // 2. pi-projects cache + manual config
+  for (const p of loadAvailableProjects(true)) {
+    if (!projectMap.has(p.path)) {
+      const spaiDir = getSpaiDirForProject(p.path);
+      projectMap.set(p.path, {
+        ...p,
+        path: p.path,
+        spaiDir,
+        hasSpai: existsSync(spaiDir),
+      });
+    }
+  }
+
+  // 3. Filesystem root scan (only projects with code markers or SPAI)
+  for (const dir of scanRootDirectories()) {
+    if (!projectMap.has(dir)) {
+      const spaiDir = getSpaiDirForProject(dir);
+      const hasSpai = existsSync(spaiDir);
+      const hasCodeMarker =
+        hasSpai ||
+        existsSync(join(dir, ".git")) ||
+        existsSync(join(dir, "package.json")) ||
+        existsSync(join(dir, "Cargo.toml"));
+
+      if (hasCodeMarker) {
+        projectMap.set(dir, {
+          name: basename(dir),
+          path: dir,
+          spaiDir,
+          hasSpai,
+        });
+      }
+    }
+  }
+
+  const projects = Array.from(projectMap.values());
+  projects.sort((a, b) => {
+    if (a.hasSpai && !b.hasSpai) return -1;
+    if (!a.hasSpai && b.hasSpai) return 1;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  });
+  return projects;
 }
 
 const CACHE_PATH = join(homedir(), ".pi", "agent", "pi-projects-cache.json");
