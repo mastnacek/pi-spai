@@ -834,7 +834,7 @@ async function getCompletions(
           const index = await getOrLoadIndex(process.cwd());
           const query = tokens[1].toLowerCase();
           const items = index.records.map((r) => ({
-            value: `toggle ${r.id}`,
+            value: `toggle ${r.id} `,
             label: `${r.id} — ${r.title}`,
             description: `[${r.type} - ${r.status}]`,
           }));
@@ -877,13 +877,25 @@ async function getCompletions(
 
   // 1st Token Completion (Subcommands)
   const typed = (tokens[0] ?? "").toLowerCase();
-  const items = SUBCOMMANDS.filter((cmd) =>
-    cmd.value.toLowerCase().startsWith(typed),
-  ).map((cmd) => ({
-    value: cmd.value,
-    label: cmd.label,
-    description: cmd.description,
-  }));
+  const NON_TERMINAL = new Set([
+    "list",
+    "new",
+    "show",
+    "toggle",
+    "realize",
+    "run",
+    "search",
+  ]);
+  const items: AutocompleteItem[] = [];
+  for (const cmd of SUBCOMMANDS) {
+    if (cmd.value.toLowerCase().startsWith(typed)) {
+      items.push({
+        value: NON_TERMINAL.has(cmd.value) ? `${cmd.value} ` : cmd.value,
+        label: cmd.label,
+        description: cmd.description,
+      });
+    }
+  }
 
   return items.length > 0 ? items : null;
 }
