@@ -161,11 +161,13 @@ async function openReaderView(
   initialRecord: SpaiRecord,
   initialReadingMode = true,
 ): Promise<{ realize?: boolean; record?: SpaiRecord }> {
-  if (!ctx.hasUI) {
+  if (!ctx.hasUI || ctx.mode !== "tui") {
     const text = initialReadingMode
       ? formatReadingMode(initialRecord)
       : initialRecord.rawContent || initialRecord.body;
-    ctx.ui.notify(text, "info");
+    if (ctx.hasUI) {
+      ctx.ui.notify(text, "info");
+    }
     return {};
   }
 
@@ -283,9 +285,11 @@ async function openDirectoryExplorer(
   invalidateCache();
   const spaiDir = getSpaiDir(ctx.cwd);
 
-  if (!ctx.hasUI) {
+  if (!ctx.hasUI || ctx.mode !== "tui") {
     const index = await getOrLoadIndex(ctx.cwd);
-    ctx.ui.notify(renderDirectoryTable(index, spaiDir), "info");
+    if (ctx.hasUI) {
+      ctx.ui.notify(renderDirectoryTable(index, spaiDir), "info");
+    }
     return;
   }
 
@@ -413,8 +417,10 @@ async function openKanbanBoard(ctx: ExtensionCommandContext): Promise<void> {
     return;
   }
 
-  if (!ctx.hasUI) {
-    ctx.ui.notify(renderDirectoryTable(index, spaiDir), "info");
+  if (!ctx.hasUI || ctx.mode !== "tui") {
+    if (ctx.hasUI) {
+      ctx.ui.notify(renderDirectoryTable(index, spaiDir), "info");
+    }
     return;
   }
 
