@@ -25,7 +25,9 @@
     "index.ts",
     "README.md",
     "LICENSE",
-    "package.json"
+    "package.json",
+    "src",
+    "skills"
   ],
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
@@ -45,6 +47,9 @@
   "pi": {
     "extensions": [
       "./index.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   }
 }

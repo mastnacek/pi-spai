@@ -8,6 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { loadAvailableProjects } from "./projects.js";
 import {
   parseInlineMeta,
   parseSpai,
@@ -206,7 +207,7 @@ export function parseSpaiMarkdown(
   let timestamp = formatDateTime();
   let priority: SpaiPriority | undefined = inlineMeta.priority;
   let deadline: string | undefined = inlineMeta.deadline;
-  let project: string | undefined;
+  let project: string | undefined = inlineMeta.project;
   const tags: string[] = [...inlineMeta.tags];
 
   // Parse simple YAML keys if present
@@ -286,6 +287,7 @@ export async function rebuildIndex(
               tags: parsed.tags,
               priority: parsed.priority,
               deadline: parsed.deadline,
+              project: parsed.project,
               file,
             });
           }
@@ -363,7 +365,7 @@ export async function saveRecord(
     description: inlineMeta.cleanBody.slice(0, 120),
     priority: inlineMeta.priority,
     deadline: inlineMeta.deadline,
-    project: projectHint || basename(cwd),
+    project: inlineMeta.project || projectHint || basename(cwd),
     file: fileName,
     body: rawText,
     subtasks,
@@ -382,7 +384,8 @@ export async function saveRecord(
     tags: record.tags,
     priority: record.priority,
     deadline: record.deadline,
-    file: fileName,
+    project: record.project,
+    file: record.file,
   };
 
   index.records = index.records.filter((r) => r.id !== id);
@@ -428,8 +431,30 @@ export async function readRecord(
   const filePath = join(dir, targetFile);
   try {
     const content = await readFile(filePath, "utf8");
-    return parseSpaiMarkdown(content, basename(filePath));
+    const parsed = parseSpaiMarkdown(content, basename(filePath));
+    if (parsed) {
+      parsed.filePath = filePath;
+      parsed.projectPath = cwd;
+    }
+    return parsed;
   } catch {
+    if (!dirOverride) {
+      try {
+        const projects = loadAvailableProjects();
+        for (const proj of projects) {
+          if (proj.path === cwd) continue;
+          const projSpaiDir = getSpaiDir(proj.path);
+          if (existsSync(projSpaiDir)) {
+            const candidate = await readRecord(proj.path, idOrFile, undefined);
+            if (candidate) {
+              return candidate;
+            }
+          }
+        }
+      } catch {
+        // Fallback search ignore
+      }
+    }
     return null;
   }
 }
@@ -459,18 +484,19 @@ export async function updateRecordStatus(
   }
 
   const updatedMarkdown = formatSpaiMarkdown(record);
-  const dir = getSpaiDir(cwd, dirOverride);
-  const filePath = join(dir, record.file);
+  const targetCwd = record.projectPath || cwd;
+  const dir = getSpaiDir(targetCwd, dirOverride);
+  const filePath = record.filePath || join(dir, record.file);
   await atomicWriteFile(filePath, updatedMarkdown);
 
-  const index = await loadIndex(cwd, dirOverride);
+  const index = await loadIndex(targetCwd, dirOverride);
   const entry = index.records.find((r) => r.id === record.id);
   if (entry) {
     entry.status = nextStatus;
     entry.symbol = symbol;
     entry.type = record.type;
     index.lastUpdated = formatDateTime();
-    const indexPath = getIndexPath(cwd, dirOverride);
+    const indexPath = getIndexPath(targetCwd, dirOverride);
     await atomicWriteFile(indexPath, JSON.stringify(index, null, 2) + "\n");
   }
 
@@ -482,6 +508,7 @@ export async function searchRecords(
   query: string,
   statusFilter?: SpaiStatus,
   dirOverride?: string,
+  projectFilter?: string,
 ): Promise<SearchMatch[]> {
   const index = await loadIndex(cwd, dirOverride);
   const terms = query
@@ -496,18 +523,26 @@ export async function searchRecords(
       continue;
     }
 
+    if (
+      projectFilter &&
+      entry.project?.toLowerCase() !== projectFilter.toLowerCase()
+    ) {
+      continue;
+    }
+
     if (terms.length === 0) {
       matches.push({ ...entry, score: 1 });
       continue;
     }
 
     const searchable =
-      `${entry.id} ${entry.title} ${entry.type} ${entry.status} ${entry.tags.join(" ")}`.toLowerCase();
+      `${entry.id} ${entry.title} ${entry.type} ${entry.status} ${entry.project ?? ""} ${entry.tags.join(" ")}`.toLowerCase();
     let score = 0;
 
     for (const term of terms) {
       if (entry.id.toLowerCase() === term) score += 10;
       else if (entry.title.toLowerCase().includes(term)) score += 5;
+      else if (entry.project && entry.project.toLowerCase().includes(term)) score += 5;
       else if (entry.tags.some((t) => t.includes(term))) score += 4;
       else if (searchable.includes(term)) score += 1;
     }

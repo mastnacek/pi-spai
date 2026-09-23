@@ -155,15 +155,42 @@ export function extractDeadline(text: string): {
 }
 
 /**
- * Parses all inline metadata (`!`, `@deadline`, `:tags:`) from text.
+ * Extracts project binding `@projectName` or `@"project name"` from text.
+ * Skips dates (e.g. @2026-09-01, @01.09.).
+ */
+export function extractProject(text: string): {
+  project?: string;
+  cleanText: string;
+} {
+  const projectRe =
+    /(?:^|\s)@(?:"([^"\n]+)"|([a-zA-Z0-9_./-]+))(?:\s|$)/;
+  const match = text.match(projectRe);
+  if (match) {
+    const rawVal = match[1] ?? match[2];
+    if (
+      /^\d{4}-\d{2}-\d{2}$/.test(rawVal) ||
+      /^\d{1,2}\.\d{1,2}\.(?:\d{4})?$/.test(rawVal)
+    ) {
+      return { cleanText: text };
+    }
+    const cleanText = text.replace(projectRe, " ").trim();
+    return { project: rawVal, cleanText };
+  }
+  return { cleanText: text };
+}
+
+/**
+ * Parses all inline metadata (`!`, `@deadline`, `@project`, `:tags:`) from text.
  */
 export function parseInlineMeta(text: string): InlineMeta {
   const p = extractPriority(text);
   const d = extractDeadline(p.cleanText);
-  const t = extractInlineTags(d.cleanText);
+  const pr = extractProject(d.cleanText);
+  const t = extractInlineTags(pr.cleanText);
   return {
     priority: p.priority,
     deadline: d.deadline,
+    project: pr.project,
     tags: t.tags,
     cleanBody: t.cleanText,
   };

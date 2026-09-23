@@ -5,6 +5,7 @@ import {
   extractDeadline,
   extractInlineTags,
   extractPriority,
+  extractProject,
   formatSpaiLine,
   matchSpaiPrefix,
   parseInlineMeta,
@@ -73,12 +74,29 @@ test("extractDeadline parses @YYYY-MM-DD and @DD.MM.", () => {
   assert.ok(res2.deadline?.includes("09-15"));
 });
 
-test("parseInlineMeta extracts all inline metadata together", () => {
-  const meta = parseInlineMeta("! . Opravit chybu @2026-09-01 :urgent:core:");
+test("extractProject parses @project and @\"project name\" without colliding with dates", () => {
+  const res1 = extractProject(". Dokončit task @herdr :feature:");
+  assert.equal(res1.project, "herdr");
+  assert.equal(res1.cleanText, ". Dokončit task :feature:");
+
+  const res2 = extractProject(". Task @\"my awesome project\" !high");
+  assert.equal(res2.project, "my awesome project");
+  assert.equal(res2.cleanText, ". Task !high");
+
+  // Should ignore dates
+  const resDate = extractProject(". Task @2026-09-01");
+  assert.equal(resDate.project, undefined);
+  assert.equal(resDate.cleanText, ". Task @2026-09-01");
+});
+
+test("parseInlineMeta extracts all inline metadata together including project", () => {
+  const meta = parseInlineMeta("! . Opravit chybu @pi-spai @2026-09-01 :urgent:core:");
   assert.equal(meta.priority, "high");
   assert.equal(meta.deadline, "2026-09-01");
+  assert.equal(meta.project, "pi-spai");
   assert.ok(meta.tags.includes("urgent"));
   assert.ok(meta.tags.includes("core"));
+  assert.equal(meta.cleanBody, ". Opravit chybu");
 });
 
 test("parseSpai extracts title, type, and status", () => {

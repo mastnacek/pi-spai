@@ -30,6 +30,7 @@ export interface SpaiPrefixDef {
 export interface InlineMeta {
  priority?: SpaiPriority;
  deadline?: string;
+ project?: string;
  tags: string[];
  cleanBody: string;
 }
@@ -53,6 +54,8 @@ export interface SpaiRecord {
  priority?: SpaiPriority;
  deadline?: string;
  project?: string;
+ projectPath?: string;
+ filePath?: string;
  file: string;
  body: string;
  subtasks: Subtask[];
@@ -69,6 +72,7 @@ export interface SpaiIndexEntry {
  tags: string[];
  priority?: SpaiPriority;
  deadline?: string;
+ project?: string;
  file: string;
 }
 

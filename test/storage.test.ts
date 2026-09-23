@@ -115,6 +115,25 @@ test("saveRecord, readRecord, updateRecordStatus, and searchRecords work atomica
     // Index verification
     const index = await loadIndex(tempDir, "docs/spai");
     assert.equal(index.records.length, 2);
+
+    // Save with @project inline
+    const record3 = await saveRecord(
+      tempDir,
+      ". Úkol s projektem @pi-spai :test:",
+      "docs/spai",
+    );
+    assert.equal(record3.project, "pi-spai");
+
+    // Search by project filter
+    const projectSearch = await searchRecords(
+      tempDir,
+      "",
+      undefined,
+      "docs/spai",
+      "pi-spai",
+    );
+    assert.equal(projectSearch.length, 1);
+    assert.equal(projectSearch[0]?.id, record3.id);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

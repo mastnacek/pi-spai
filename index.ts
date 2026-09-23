@@ -14,9 +14,15 @@ import {
   matchesKey,
 } from "@earendil-works/pi-tui";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { KanbanBoardComponent } from "./src/kanban.js";
 import { cycleNextStatus } from "./src/spai.js";
+import {
+  createSpaiAutocompleteProvider,
+  getSpaiNewCompletions,
+} from "./src/autocomplete.js";
+import { loadAvailableProjects } from "./src/projects.js";
 import {
   ensureSpaiDir,
   getIndexPath,
@@ -153,6 +159,12 @@ async function handleSessionStart(ctx: ExtensionContext): Promise<void> {
     await updateStatusBar(ctx);
   } catch {
     // Non-blocking
+  }
+
+  if (ctx.hasUI) {
+    ctx.ui.addAutocompleteProvider((current) =>
+      createSpaiAutocompleteProvider(current, () => loadAvailableProjects()),
+    );
   }
 }
 
@@ -752,6 +764,12 @@ async function getCompletions(
   if (tokens.length > 1 || (trailingSpace && tokens.length === 1)) {
     const cmd = tokens[0]?.toLowerCase();
 
+    // Subcommand: new
+    if (cmd === "new") {
+      const remainder = prefix.slice(prefix.indexOf("new") + 3).trimStart();
+      return getSpaiNewCompletions(remainder);
+    }
+
     // Subcommand: list
     if (cmd === "list") {
       const filters = [
@@ -922,9 +940,19 @@ function registerTools(pi: ExtensionAPI): void {
         description:
           "Text položky včetně volitelného SPAI prefixu (. úkol, ? nápad, - poznámka, x hotovo, ! priorita, @termín, :tag:)",
       }),
+      project: Type.Optional(
+        Type.String({
+          description: "Volitelný název projektu k provázání úkolu",
+        }),
+      ),
     }),
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-      const saved = await saveRecord(ctx.cwd, params.text);
+      const saved = await saveRecord(
+        ctx.cwd,
+        params.text,
+        undefined,
+        params.project,
+      );
       invalidateCache();
       await updateStatusBar(ctx);
       if (ctx.hasUI) {
@@ -934,7 +962,7 @@ function registerTools(pi: ExtensionAPI): void {
         content: [
           {
             type: "text" as const,
-            text: `Vytvořena SPAI položka ${saved.id} (${saved.file}):\nTyp: ${saved.type}, Stav: ${saved.status}, Titulek: ${saved.title}`,
+            text: `Vytvořena SPAI položka ${saved.id} (${saved.file}):\nTyp: ${saved.type}, Stav: ${saved.status}, Projekt: ${saved.project || "none"}, Titulek: ${saved.title}`,
           },
         ],
         details: { record: saved },
@@ -959,12 +987,19 @@ function registerTools(pi: ExtensionAPI): void {
             "Volitelný filtr stavu ('todo', 'working', 'waiting', 'done', 'idea', 'note')",
         }),
       ),
+      project: Type.Optional(
+        Type.String({
+          description: "Volitelný filtr podle názvu projektu",
+        }),
+      ),
     }),
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
       const results = await searchRecords(
         ctx.cwd,
         params.query,
         params.status as SpaiStatus,
+        undefined,
+        params.project,
       );
       if (results.length === 0) {
         return {
@@ -980,14 +1015,75 @@ function registerTools(pi: ExtensionAPI): void {
 
       const lines = [`Nalezeno ${results.length} SPAI položek:`];
       for (const m of results) {
+        const projBadge = m.project ? ` [@${m.project}]` : "";
         lines.push(
-          `- [${m.id}] [${m.type} - ${m.status}] (${m.timestamp}): ${m.title}`,
+          `- [${m.id}] [${m.type} - ${m.status}]${projBadge} (${m.timestamp}): ${m.title}`,
         );
       }
 
       return {
         content: [{ type: "text" as const, text: lines.join("\n") }],
         details: { matches: results },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "update_spai_status",
+    label: "Update SPAI Item Status",
+    description:
+      "Změnit stav existujícího SPAI úkolu (např. nastavit 'working' při zahájení práce na úkolu nebo 'done' po jeho dokončení).",
+    promptSnippet: "Změnit stav SPAI úkolu v docs/spai/",
+    promptGuidelines: [
+      "Use update_spai_status to mark tasks as 'working' when starting work and 'done' when completing them.",
+    ],
+    parameters: Type.Object({
+      id: Type.String({
+        description: "SPAI ID položky (např. 'SPAI-001' nebo '001')",
+      }),
+      status: StringEnum(
+        [
+          "todo",
+          "working",
+          "waiting",
+          "done",
+          "cancelled",
+          "idea",
+          "note",
+        ] as const,
+        {
+          description:
+            "Cílový stav: 'working' (rozpracováno), 'done' (hotovo), 'todo' (otevřeno), 'waiting' (blokováno/čeká), 'cancelled' (zrušeno)",
+        },
+      ),
+    }),
+    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+      const updated = await updateRecordStatus(
+        ctx.cwd,
+        params.id,
+        params.status as SpaiStatus,
+      );
+      if (!updated) {
+        throw new Error(
+          `SPAI položka s ID "${params.id}" nebyla nalezena.`,
+        );
+      }
+      invalidateCache();
+      await updateStatusBar(ctx);
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          `[SPAI] Stav ${updated.id} změněn na "${updated.status}"`,
+          "info",
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Stav položky ${updated.id} (${updated.file}) byl úspěšně změněn na "${updated.status}".`,
+          },
+        ],
+        details: { record: updated },
       };
     },
   });
