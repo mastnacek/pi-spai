@@ -46,8 +46,14 @@ export interface ProjectsConfig {
   lastScanTime?: number;
 }
 
-export const CACHE_PATH = join(homedir(), ".pi", "agent", "pi-projects-cache.json");
-export const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-projects.json");
+/** agent dir root; `PI_CODING_AGENT_DIR` overrides it (tests, custom layouts). */
+function agentDir(): string {
+  const override = process.env.PI_CODING_AGENT_DIR?.trim();
+  return override && override.length > 0 ? override : join(homedir(), ".pi", "agent");
+}
+
+export const CACHE_PATH = join(agentDir(), "pi-projects-cache.json");
+export const CONFIG_PATH = join(agentDir(), "pi-projects.json");
 
 export const MONOREPO_CONTAINERS = [
   "packages",
@@ -110,50 +116,71 @@ export function normalizeSortBy(
   return "name";
 }
 
-export function loadProjectsConfig(): ProjectsConfig {
+/** Project layer of the shared pi-projects registry; wins over the global file. */
+export function projectConfigPath(cwd: string): string {
+  return join(cwd, ".pi", "pi-projects.json");
+}
+
+/** Session cwd the shared-registry cascade hangs off; unset = global file only. */
+let projectsConfigCwd: string | undefined;
+
+/**
+ * Rebind the shared registry cascade to a session's project layer.
+ * pi-projects writes `<cwd>/.pi/pi-projects.json` unless `--global` is given, so
+ * /spai must read the same layers or the two commands would disagree about the
+ * configured roots and the project list built from them.
+ */
+export function setProjectsConfigCwd(cwd?: string): void {
+  projectsConfigCwd = cwd;
+}
+
+/** Raw contents of one cascade layer; `{}` when absent or unreadable. */
+function readProjectsLayer(path: string | undefined): Record<string, unknown> {
+  if (!path) return {};
   try {
-    if (existsSync(CONFIG_PATH)) {
-      const raw = readFileSync(CONFIG_PATH, "utf8");
-      const parsed = JSON.parse(raw);
-      return {
-        roots: Array.isArray(parsed.roots)
-          ? parsed.roots.map((r: string) => normalizePath(r))
-          : ["D:/01_programovani"],
-        manualProjects: Array.isArray(parsed.manualProjects)
-          ? parsed.manualProjects
-          : [],
-        excludedPaths: Array.isArray(parsed.excludedPaths)
-          ? parsed.excludedPaths.map((p: string) => normalizePath(p))
-          : [],
-        pinnedPaths: Array.isArray(parsed.pinnedPaths)
-          ? parsed.pinnedPaths.map((p: string) => normalizePath(p))
-          : [],
-        maxDepth: typeof parsed.maxDepth === "number" ? parsed.maxDepth : 5,
-        prependToAtAutocomplete:
-          typeof parsed.prependToAtAutocomplete === "boolean"
-            ? parsed.prependToAtAutocomplete
-            : true,
-        rescanIntervalMinutes:
-          typeof parsed.rescanIntervalMinutes === "number"
-            ? parsed.rescanIntervalMinutes
-            : 30,
-        sortBy: normalizeSortBy(parsed.sortBy),
-        lastScanTime: parsed.lastScanTime,
-      };
+    if (existsSync(path)) {
+      return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
     }
   } catch {
     // Ignore config read error
   }
+  return {};
+}
+
+/** Global layer, then the project layer overriding it key by key. */
+export function loadProjectsConfig(
+  cwd: string | undefined = projectsConfigCwd,
+): ProjectsConfig {
+  const parsed = {
+    ...readProjectsLayer(CONFIG_PATH),
+    ...readProjectsLayer(cwd ? projectConfigPath(cwd) : undefined),
+  };
 
   return {
-    roots: ["D:/01_programovani"],
-    manualProjects: [],
-    excludedPaths: [],
-    pinnedPaths: [],
-    maxDepth: 5,
-    prependToAtAutocomplete: true,
-    rescanIntervalMinutes: 30,
-    sortBy: "name",
+    roots: Array.isArray(parsed.roots)
+      ? parsed.roots.map((r: string) => normalizePath(r))
+      : ["D:/01_programovani"],
+    manualProjects: Array.isArray(parsed.manualProjects)
+      ? parsed.manualProjects
+      : [],
+    excludedPaths: Array.isArray(parsed.excludedPaths)
+      ? parsed.excludedPaths.map((p: string) => normalizePath(p))
+      : [],
+    pinnedPaths: Array.isArray(parsed.pinnedPaths)
+      ? parsed.pinnedPaths.map((p: string) => normalizePath(p))
+      : [],
+    maxDepth: typeof parsed.maxDepth === "number" ? parsed.maxDepth : 5,
+    prependToAtAutocomplete:
+      typeof parsed.prependToAtAutocomplete === "boolean"
+        ? parsed.prependToAtAutocomplete
+        : true,
+    rescanIntervalMinutes:
+      typeof parsed.rescanIntervalMinutes === "number"
+        ? parsed.rescanIntervalMinutes
+        : 30,
+    sortBy: normalizeSortBy(parsed.sortBy as string | undefined),
+    lastScanTime:
+      typeof parsed.lastScanTime === "number" ? parsed.lastScanTime : undefined,
   };
 }
 

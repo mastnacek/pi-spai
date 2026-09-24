@@ -14,6 +14,7 @@ import {
   handleStatus,
   handleToggle,
 } from "./src/commands-handlers.js";
+import { setProjectsConfigCwd } from "./src/projects-scanner.js";
 import { handleSessionStart } from "./src/session-state.js";
 import { registerTools } from "./src/tools.js";
 
@@ -26,7 +27,14 @@ export default function (pi: ExtensionAPI): void {
     if (typeof sub === "function") unsubs.push(sub as () => void);
   };
 
-  track(pi.on("session_start", (_event, ctx) => handleSessionStart(ctx)));
+  track(
+    pi.on("session_start", (_event, ctx) => {
+      // Follow the same pi-projects registry cascade that /proj writes to,
+      // otherwise /spai would read roots the user changed for this project.
+      setProjectsConfigCwd(ctx.cwd);
+      handleSessionStart(ctx);
+    }),
+  );
 
   pi.on("session_shutdown", () => {
     while (unsubs.length > 0) {
