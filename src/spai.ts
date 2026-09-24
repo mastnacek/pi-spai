@@ -7,6 +7,23 @@ import type {
   Subtask,
 } from "./types.js";
 import { resolveProjectFromIdentifier, type ProjectSummary } from "./projects.js";
+import {
+  cycleNextStatus,
+  formatSpaiLine,
+  getStatusGlyph,
+  getStatusPrefix,
+  toggleSubtaskDone,
+  updateBodyStatusPrefix,
+} from "./spai-status.js";
+
+export {
+  cycleNextStatus,
+  formatSpaiLine,
+  getStatusGlyph,
+  getStatusPrefix,
+  toggleSubtaskDone,
+  updateBodyStatusPrefix,
+};
 
 /**
  * Standard SPAI Prefix Table in exact order of precedence.
@@ -100,38 +117,46 @@ export function extractInlineTags(text: string): {
   const tagBlockRe =
     /(?:^|\s):([A-Za-z0-9_./-]+(?::[A-Za-z0-9_./-]+)*):(?:\s|$)/g;
 
-  const cleanText = text
-    .replace(tagBlockRe, (_m, tagChain: string) => {
-      const split = tagChain.split(":").filter(Boolean);
-      for (const t of split) {
-        tags.push(t.toLowerCase());
+  let match: RegExpExecArray | null;
+  const cleanText = text.replace(tagBlockRe, (fullMatch, tagGroup) => {
+    if (tagGroup) {
+      const parts = tagGroup.split(":").filter(Boolean);
+      for (const p of parts) {
+        if (!tags.includes(p)) {
+          tags.push(p);
+        }
       }
-      return " ";
-    })
-    .trim();
+    }
+    return " ";
+  });
 
-  return { tags: Array.from(new Set(tags)), cleanText };
+  return {
+    tags,
+    cleanText: cleanText.replace(/\s{2,}/g, " ").trim(),
+  };
 }
 
 /**
- * Extracts priority mark `!` from text (at start or inline).
+ * Extracts priority markers `!` or `!high` from text.
  */
 export function extractPriority(text: string): {
   priority?: SpaiPriority;
   cleanText: string;
 } {
-  const prioRe = /(?:^|\s)!(?:\s|$)/;
-  if (prioRe.test(text)) {
-    return {
-      priority: "high",
-      cleanText: text.replace(prioRe, " ").trim(),
-    };
+  const priorityRe = /(?:^|\s)!(high|low|medium)?(?:\s|$)/i;
+  const match = text.match(priorityRe);
+  if (match) {
+    const rawVal = match[1]?.toLowerCase();
+    const priority: SpaiPriority =
+      rawVal === "low" ? "low" : rawVal === "medium" ? "medium" : "high";
+    const cleanText = text.replace(priorityRe, " ").trim();
+    return { priority, cleanText };
   }
   return { cleanText: text };
 }
 
 /**
- * Extracts deadline `@YYYY-MM-DD` or `@DD.MM.` from text.
+ * Extracts deadline `@YYYY-MM-DD` or `@DD.MM.` or `@DD.MM.YYYY` from text.
  */
 export function extractDeadline(text: string): {
   deadline?: string;
@@ -157,11 +182,12 @@ export function extractDeadline(text: string): {
 
 /**
  * Extracts project binding `@projectName`, `@"project name"`, `@path` or `@"path"` from text.
- * Skips dates (e.g. @2026-09-01, @01.09.).
+ * Skips dates (e.g. @2026-09-01, @01.09.). Supports resolving against workspace baseCwd.
  */
 export function extractProject(
   text: string,
   getProjects?: () => ProjectSummary[],
+  baseCwd?: string,
 ): {
   project?: string;
   projectPath?: string;
@@ -180,7 +206,7 @@ export function extractProject(
       return { cleanText: text };
     }
     const cleanText = text.replace(projectRe, " ").trim();
-    const resolved = resolveProjectFromIdentifier(rawVal, getProjects);
+    const resolved = resolveProjectFromIdentifier(rawVal, getProjects, baseCwd);
     return {
       project: resolved.name,
       projectPath: resolved.path,
@@ -196,10 +222,11 @@ export function extractProject(
 export function parseInlineMeta(
   text: string,
   getProjects?: () => ProjectSummary[],
+  baseCwd?: string,
 ): InlineMeta {
   const p = extractPriority(text);
   const d = extractDeadline(p.cleanText);
-  const pr = extractProject(d.cleanText, getProjects);
+  const pr = extractProject(d.cleanText, getProjects, baseCwd);
   const t = extractInlineTags(pr.cleanText);
   return {
     priority: p.priority,
@@ -213,10 +240,13 @@ export function parseInlineMeta(
 
 /**
  * Parses full SPAI note structure from raw text.
+ * Gracefully handles leading `@project` binding or inline priority metadata.
  */
 export function parseSpai(
   text: string,
   manualType?: SpaiNoteType,
+  getProjects?: () => ProjectSummary[],
+  baseCwd?: string,
 ): {
   type: SpaiNoteType;
   status: SpaiStatus;
@@ -238,7 +268,14 @@ export function parseSpai(
   }
 
   const rawFirstLine = lines[firstLineIdx] ?? "";
-  const prefixMatch = matchSpaiPrefix(rawFirstLine);
+
+  // 1. Detect if leading metadata (such as leading @project or !priority) is present
+  const firstLineMeta = parseInlineMeta(rawFirstLine, getProjects, baseCwd);
+  const cleanFirstLine = firstLineMeta.cleanBody.trim();
+
+  // Try matching prefix on cleanFirstLine first, fallback to rawFirstLine
+  const prefixMatch =
+    matchSpaiPrefix(cleanFirstLine) || matchSpaiPrefix(rawFirstLine);
 
   const noteType: SpaiNoteType = manualType || prefixMatch?.type || "Note";
   const status: SpaiStatus =
@@ -247,12 +284,15 @@ export function parseSpai(
 
   // Title extraction
   let title = prefixMatch
-    ? rawFirstLine.slice(prefixMatch.prefix.length).trim()
-    : rawFirstLine.trim();
+    ? cleanFirstLine.startsWith(prefixMatch.prefix)
+      ? cleanFirstLine.slice(prefixMatch.prefix.length).trim()
+      : rawFirstLine.slice(prefixMatch.prefix.length).trim()
+    : cleanFirstLine || rawFirstLine.trim();
+
   if (title.startsWith("# ")) {
     title = title.slice(2).trim();
   }
-  const cleanTitleMeta = parseInlineMeta(title);
+  const cleanTitleMeta = parseInlineMeta(title, getProjects, baseCwd);
   title = cleanTitleMeta.cleanBody || "Nová položka";
 
   return {
@@ -290,167 +330,4 @@ export function parseSubtasks(text: string): Subtask[] {
   }
 
   return subtasks;
-}
-
-/**
- * Toggles a subtask done status in markdown text.
- */
-export function toggleSubtaskDone(text: string, lineIndex: number): string {
-  const lines = text.split("\n");
-  if (lineIndex < 0 || lineIndex >= lines.length) {
-    return text;
-  }
-
-  const line = lines[lineIndex] ?? "";
-  const trimmed = line.trimStart();
-  const indent = line.slice(0, line.length - trimmed.length);
-  const match = matchSpaiPrefix(trimmed);
-
-  if (match) {
-    const newPrefix = match.status === "done" ? ". " : "x ";
-    const rest = trimmed.slice(match.prefix.length);
-    lines[lineIndex] = `${indent}${newPrefix}${rest}`;
-    return lines.join("\n");
-  }
-
-  return text;
-}
-
-function getStatusGlyph(status: SpaiStatus): string {
-  switch (status) {
-    case "done":
-      return "✓ ";
-    case "working":
-      return "◐ ";
-    case "waiting":
-      return "⏳ ";
-    case "todo":
-      return "○ ";
-    case "cancelled":
-      return "✗ ";
-    case "idea":
-      return "💡 ";
-    case "note":
-    default:
-      return "• ";
-  }
-}
-
-/**
- * Formats a text line in SPAI aware Reading Mode.
- */
-export function formatSpaiLine(line: string): string {
-  const trimmed = line.trimStart();
-  const indent = line.slice(0, line.length - trimmed.length);
-
-  const match = matchSpaiPrefix(trimmed);
-  if (match) {
-    const textWithoutPrefix = trimmed.slice(match.prefix.length);
-    const { tags, cleanText } = extractInlineTags(textWithoutPrefix);
-    const glyph = getStatusGlyph(match.status);
-    const tagBadge = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
-    return `${indent}${glyph}${cleanText}${tagBadge}`;
-  }
-
-  if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-    const rest = trimmed.slice(2);
-    const { tags, cleanText } = extractInlineTags(rest);
-    const tagBadge = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
-    return `${indent}• ${cleanText}${tagBadge}`;
-  }
-
-  return line;
-}
-
-/**
- * Gets the standard prefix string and symbol for a given SPAI status.
- */
-export function getStatusPrefix(status: SpaiStatus): {
-  prefix: string;
-  symbol: string;
-} {
-  switch (status) {
-    case "working":
-      return { prefix: "/ ", symbol: "/" };
-    case "waiting":
-      return { prefix: "/. ", symbol: "/." };
-    case "done":
-      return { prefix: "x ", symbol: "x" };
-    case "cancelled":
-      return { prefix: "z ", symbol: "z" };
-    case "idea":
-      return { prefix: "? ", symbol: "?" };
-    case "note":
-      return { prefix: "- ", symbol: "-" };
-    case "todo":
-    default:
-      return { prefix: ". ", symbol: "." };
-  }
-}
-
-/**
- * Cycles through the complete SPAI status loop.
- */
-export function cycleNextStatus(
-  current: SpaiStatus,
-  type: SpaiNoteType = "Todo",
-): SpaiStatus {
-  if (type === "Idea") {
-    if (current === "idea") return "todo";
-    if (current === "todo") return "working";
-    if (current === "working") return "waiting";
-    if (current === "waiting") return "done";
-    if (current === "done") return "cancelled";
-    return "idea";
-  }
-
-  if (type === "Note") {
-    if (current === "note") return "todo";
-    if (current === "todo") return "done";
-    return "note";
-  }
-
-  // Full Todo loop: todo (○) ➔ working (◐) ➔ waiting (⏳) ➔ done (✓) ➔ cancelled (✗) ➔ todo (○)
-  switch (current) {
-    case "todo":
-      return "working";
-    case "working":
-      return "waiting";
-    case "waiting":
-      return "done";
-    case "done":
-      return "cancelled";
-    case "cancelled":
-    default:
-      return "todo";
-  }
-}
-
-/**
- * Updates the leading SPAI status prefix on the first non-empty line of markdown text.
- */
-export function updateBodyStatusPrefix(
-  body: string,
-  newStatus: SpaiStatus,
-): { body: string; symbol: string } {
-  const { prefix: newPrefix, symbol } = getStatusPrefix(newStatus);
-  const lines = body.split("\n");
-  const firstTextIdx = lines.findIndex((l) => l.trim().length > 0);
-
-  if (firstTextIdx !== -1) {
-    const rawLine = lines[firstTextIdx] ?? "";
-    const trimmed = rawLine.trimStart();
-    const indent = rawLine.slice(0, rawLine.length - trimmed.length);
-    const existingPrefix = matchSpaiPrefix(trimmed);
-
-    if (existingPrefix) {
-      const rest = trimmed.slice(existingPrefix.prefix.length);
-      lines[firstTextIdx] = `${indent}${newPrefix}${rest}`;
-    } else {
-      lines[firstTextIdx] = `${indent}${newPrefix}${trimmed}`;
-    }
-    return { body: lines.join("\n"), symbol };
-  }
-
-  return { body, symbol };
 }

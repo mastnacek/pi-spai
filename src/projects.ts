@@ -1,216 +1,46 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, dirname, join, normalize, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  discoverAllProjects,
+  searchProjects,
+} from "./projects-discovery.js";
+import {
+  CACHE_PATH,
+  getSpaiDirForProject,
+  loadProjectsConfig,
+  normalizePath,
+  normalizeSortBy,
+  scanRootDirectories,
+  scanWorkspaceSubprojects,
+  sortProjects,
+  type GitInfo,
+  type ProjectSummary,
+  type ProjectsConfig,
+} from "./projects-scanner.js";
 
-export interface GitInfo {
-  isGit?: boolean;
-  branch?: string;
-  clean?: boolean;
-  statusEmoji?: string;
-  modifiedCount?: number;
-  stagedCount?: number;
-  untrackedCount?: number;
-  aheadCount?: number;
-  behindCount?: number;
-  statusSummary?: string;
-}
-
-export interface ProjectSummary {
-  id?: string;
-  name: string;
-  path: string;
-  rootPath?: string;
-  relativePath?: string;
-  type?: string;
-  markers?: string[];
-  description?: string;
-  spaiDir?: string;
-  hasSpai?: boolean;
-  taskCount?: number;
-  fileCount?: number;
-  lastModified?: number;
-  source?: "scan" | "manual" | "auto";
-  pinned?: boolean;
-  tags?: string[];
-  git?: GitInfo;
-}
-
-export interface ProjectsConfig {
-  roots: string[];
-  manualProjects: Array<{ name?: string; path: string; type?: string; description?: string }>;
-  excludedPaths: string[];
-  pinnedPaths?: string[];
-  maxDepth: number;
-  prependToAtAutocomplete: boolean;
-  rescanIntervalMinutes: number;
-  sortBy?: "name" | "root" | "mtime" | "type" | "files" | "git";
-  lastScanTime?: number;
-}
-
-export function normalizeSortBy(
-  s?: string,
-): "name" | "root" | "mtime" | "type" | "files" | "git" {
-  if (!s) return "name";
-  const lower = s.toLowerCase().trim();
-  if (lower === "root" || lower === "origin" || lower === "koren")
-    return "root";
-  if (
-    lower === "mtime" ||
-    lower === "date" ||
-    lower === "time" ||
-    lower === "cas"
-  )
-    return "mtime";
-  if (lower === "type" || lower === "typ" || lower === "tech") return "type";
-  if (lower === "files" || lower === "soubory" || lower === "count")
-    return "files";
-  if (lower === "git" || lower === "status") return "git";
-  return "name";
-}
-
-export function normalizePath(p: string): string {
-  const norm = normalize(resolve(p)).replace(/\\/g, "/");
-  if (norm.length > 3 && norm.endsWith("/")) {
-    return norm.slice(0, -1);
-  }
-  return norm;
-}
-
-export function getSpaiDirForProject(projectPath: string): string {
-  const candidates = [
-    join(projectPath, "docs", "spai"),
-    join(projectPath, ".pi", "spai"),
-  ];
-  for (const c of candidates) {
-    if (existsSync(c)) return normalizePath(c);
-  }
-  return normalizePath(join(projectPath, "docs", "spai"));
-}
-
-const CACHE_PATH = join(homedir(), ".pi", "agent", "pi-projects-cache.json");
-const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-projects.json");
-
-export function loadProjectsConfig(): ProjectsConfig {
-  try {
-    if (existsSync(CONFIG_PATH)) {
-      const raw = readFileSync(CONFIG_PATH, "utf8");
-      const parsed = JSON.parse(raw);
-      return {
-        roots: Array.isArray(parsed.roots)
-          ? parsed.roots.map((r: string) => normalizePath(r))
-          : ["D:/01_programovani"],
-        manualProjects: Array.isArray(parsed.manualProjects)
-          ? parsed.manualProjects
-          : [],
-        excludedPaths: Array.isArray(parsed.excludedPaths)
-          ? parsed.excludedPaths.map((p: string) => normalizePath(p))
-          : [],
-        pinnedPaths: Array.isArray(parsed.pinnedPaths)
-          ? parsed.pinnedPaths.map((p: string) => normalizePath(p))
-          : [],
-        maxDepth: typeof parsed.maxDepth === "number" ? parsed.maxDepth : 5,
-        prependToAtAutocomplete:
-          typeof parsed.prependToAtAutocomplete === "boolean"
-            ? parsed.prependToAtAutocomplete
-            : true,
-        rescanIntervalMinutes:
-          typeof parsed.rescanIntervalMinutes === "number"
-            ? parsed.rescanIntervalMinutes
-            : 30,
-        sortBy: normalizeSortBy(parsed.sortBy),
-        lastScanTime: parsed.lastScanTime,
-      };
-    }
-  } catch {
-    // Ignore config read error
-  }
-
-  return {
-    roots: ["D:/01_programovani"],
-    manualProjects: [],
-    excludedPaths: [],
-    pinnedPaths: [],
-    maxDepth: 5,
-    prependToAtAutocomplete: true,
-    rescanIntervalMinutes: 30,
-    sortBy: "name",
-  };
-}
-
-/**
- * Scans filesystem root folders for projects with code markers or SPAI directories.
- */
-function scanRootDirectories(roots: string[]): string[] {
-  const candidates = [
-    ...roots,
-    "D:/01_programovani",
-    "C:/01_programovani",
-    join(homedir(), "projects"),
-    join(homedir(), "workspace"),
-    join(homedir(), "dev"),
-    dirname(process.cwd()),
-  ];
-
-  const results: string[] = [];
-  const seen = new Set<string>();
-
-  for (const root of candidates) {
-    const normRoot = normalizePath(root);
-    if (seen.has(normRoot)) continue;
-    seen.add(normRoot);
-
-    if (existsSync(normRoot)) {
-      try {
-        const entries = readdirSync(normRoot, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory() && !entry.name.startsWith(".")) {
-            results.push(normalizePath(join(normRoot, entry.name)));
-          }
-        }
-      } catch {
-        // Ignore unreadable root
-      }
-    }
-  }
-  return results;
-}
+export type { GitInfo, ProjectSummary, ProjectsConfig };
+export {
+  discoverAllProjects,
+  getSpaiDirForProject,
+  loadProjectsConfig,
+  normalizePath,
+  normalizeSortBy,
+  scanRootDirectories,
+  scanWorkspaceSubprojects,
+  searchProjects,
+  sortProjects,
+};
 
 let cachedProjectsMemory: ProjectSummary[] | null = null;
 
-export function sortProjects(
-  projects: ProjectSummary[],
-  sortBy: string = "name",
+export function loadAvailableProjects(
+  forceRefresh = false,
+  workspaceCwd?: string,
 ): ProjectSummary[] {
-  const normSort = normalizeSortBy(sortBy);
-  return [...projects].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1;
-    if (!a.pinned && b.pinned) return 1;
-    if (normSort === "mtime") {
-      if ((b.lastModified ?? 0) !== (a.lastModified ?? 0)) {
-        return (b.lastModified ?? 0) - (a.lastModified ?? 0);
-      }
-    } else if (normSort === "root") {
-      const rootA = (a.rootPath || a.source || "").toLowerCase();
-      const rootB = (b.rootPath || b.source || "").toLowerCase();
-      const cmp = rootA.localeCompare(rootB, undefined, { sensitivity: "base" });
-      if (cmp !== 0) return cmp;
-    } else if (normSort === "type") {
-      const cmp = (a.type || "").localeCompare(b.type || "", undefined, {
-        sensitivity: "base",
-      });
-      if (cmp !== 0) return cmp;
-    } else if (normSort === "files") {
-      if ((b.fileCount ?? 0) !== (a.fileCount ?? 0)) {
-        return (b.fileCount ?? 0) - (a.fileCount ?? 0);
-      }
-    }
-    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-  });
-}
-
-export function loadAvailableProjects(forceRefresh = false): ProjectSummary[] {
   if (!forceRefresh && cachedProjectsMemory && cachedProjectsMemory.length > 0) {
-    return cachedProjectsMemory;
+    if (!workspaceCwd) {
+      return cachedProjectsMemory;
+    }
   }
 
   const config = loadProjectsConfig();
@@ -218,7 +48,19 @@ export function loadAvailableProjects(forceRefresh = false): ProjectSummary[] {
   const projects: ProjectSummary[] = [];
   const seenPaths = new Set<string>();
 
-  // 1. Try reading pi-projects-cache.json (complete rich project index)
+  // 1. Workspace-local subprojects (monorepo priority)
+  const currentWorkspace = workspaceCwd || process.cwd();
+  if (currentWorkspace) {
+    const localSubs = scanWorkspaceSubprojects(currentWorkspace);
+    for (const sub of localSubs) {
+      if (!seenPaths.has(sub.path)) {
+        seenPaths.add(sub.path);
+        projects.push(sub);
+      }
+    }
+  }
+
+  // 2. Try reading pi-projects-cache.json
   if (existsSync(CACHE_PATH)) {
     try {
       const raw = readFileSync(CACHE_PATH, "utf8");
@@ -253,7 +95,7 @@ export function loadAvailableProjects(forceRefresh = false): ProjectSummary[] {
     }
   }
 
-  // 2. Try reading manual projects from pi-projects.json
+  // 3. Try reading manual projects from pi-projects.json
   if (Array.isArray(config.manualProjects)) {
     for (const p of config.manualProjects) {
       if (p?.path) {
@@ -275,7 +117,7 @@ export function loadAvailableProjects(forceRefresh = false): ProjectSummary[] {
     }
   }
 
-  // 3. Fallback: current directory and its parent's siblings if no projects found
+  // 4. Fallback: current directory and its parent's siblings if no projects found
   if (projects.length === 0) {
     const cwd = normalizePath(process.cwd());
     projects.push({
@@ -317,137 +159,85 @@ export function loadAvailableProjects(forceRefresh = false): ProjectSummary[] {
 }
 
 /**
- * Aggregated multi-project discovery: pi-projects cache + manual config +
- * filesystem root scan. Only keeps projects with code markers or SPAI data.
- */
-export function discoverAllProjects(): ProjectSummary[] {
-  const projectMap = new Map<string, ProjectSummary>();
-
-  // 1. Current working directory always included
-  const currentCwd = normalizePath(process.cwd());
-  const currentSpai = getSpaiDirForProject(currentCwd);
-  projectMap.set(currentCwd, {
-    name: basename(currentCwd),
-    path: currentCwd,
-    spaiDir: currentSpai,
-    hasSpai: existsSync(currentSpai),
-  });
-
-  // 2. pi-projects cache + manual config
-  for (const p of loadAvailableProjects(true)) {
-    if (!projectMap.has(p.path)) {
-      const spaiDir = getSpaiDirForProject(p.path);
-      projectMap.set(p.path, {
-        ...p,
-        spaiDir,
-        hasSpai: existsSync(spaiDir),
-      });
-    }
-  }
-
-  // 3. Filesystem root scan (only projects with code markers or SPAI)
-  const config = loadProjectsConfig();
-  for (const dir of scanRootDirectories(config.roots)) {
-    if (!projectMap.has(dir)) {
-      const spaiDir = getSpaiDirForProject(dir);
-      const hasSpai = existsSync(spaiDir);
-      const hasCodeMarker =
-        hasSpai ||
-        existsSync(join(dir, ".git")) ||
-        existsSync(join(dir, "package.json")) ||
-        existsSync(join(dir, "Cargo.toml"));
-
-      if (hasCodeMarker) {
-        projectMap.set(dir, {
-          name: basename(dir),
-          path: dir,
-          spaiDir,
-          hasSpai,
-        });
-      }
-    }
-  }
-
-  const projects = Array.from(projectMap.values());
-  projects.sort((a, b) => {
-    if (a.hasSpai && !b.hasSpai) return -1;
-    if (!a.hasSpai && b.hasSpai) return 1;
-    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-  });
-  return projects;
-}
-
-export function searchProjects(
-  query: string,
-  projects?: ProjectSummary[],
-): ProjectSummary[] {
-  const list = projects || loadAvailableProjects();
-  if (!query.trim()) {
-    return list;
-  }
-
-  const q = query.toLowerCase().replace(/^@/, "");
-  return list
-    .filter((p) => {
-      const name = p.name.toLowerCase();
-      const path = p.path.toLowerCase();
-      return name.includes(q) || path.includes(q);
-    })
-    .sort((a, b) => {
-      const aName = a.name.toLowerCase();
-      const bName = b.name.toLowerCase();
-      if (aName === q && bName !== q) return -1;
-      if (bName === q && aName !== q) return 1;
-      if (aName.startsWith(q) && !bName.startsWith(q)) return -1;
-      if (bName.startsWith(q) && !aName.startsWith(q)) return 1;
-      return aName.localeCompare(bName);
-    });
-}
-
-/**
  * Resolves a project identifier (path or name) into canonical project name and path.
+ * Supports workspace-relative paths, monorepo subprojects, and absolute paths.
  */
 export function resolveProjectFromIdentifier(
   identifier: string,
   getProjects: () => ProjectSummary[] = loadAvailableProjects,
+  baseCwd?: string,
 ): { name: string; path?: string } {
   if (!identifier) return { name: "" };
 
   const trimmed = identifier.trim().replace(/^@"?|"?$/g, "");
-  const norm = normalizePath(trimmed.replace(/\/+$/, ""));
-  const normLower = norm.toLowerCase();
+  const normLower = normalizePath(trimmed.replace(/\/+$/, "")).toLowerCase();
   const idLower = trimmed.toLowerCase().replace(/\/+$/, "");
   const projects = getProjects();
 
-  // 1. If it looks like a path (has slash, backslash or colon):
-  const isPathLike = /[\\/:]/.test(trimmed);
-  if (isPathLike) {
-    for (const p of projects) {
-      if (
-        p.path.toLowerCase() === normLower ||
-        normalizePath(p.path).toLowerCase() === normLower
-      ) {
-        return { name: p.name, path: p.path };
-      }
-    }
-
-    try {
-      if (existsSync(norm)) {
-        return { name: basename(norm), path: norm };
-      }
-    } catch {
-      // Ignore
-    }
-  }
-
-  // 2. Exact name match (case-insensitive)
+  // 1. Exact or path match in available projects list
   for (const p of projects) {
-    if (p.name.toLowerCase() === idLower) {
+    if (
+      p.path.toLowerCase() === normLower ||
+      normalizePath(p.path).toLowerCase() === normLower ||
+      p.name.toLowerCase() === idLower
+    ) {
       return { name: p.name, path: p.path };
     }
   }
 
-  // 3. If path-like, also check if directory basename matches idLower
+  // 2. If baseCwd is provided, check direct resolution or monorepo subprojects
+  if (baseCwd) {
+    const normBase = normalizePath(baseCwd);
+    const directRel = resolve(normBase, trimmed.replace(/\/+$/, ""));
+    try {
+      if (existsSync(directRel) && statSync(directRel).isDirectory()) {
+        const normDirect = normalizePath(directRel);
+        const pkgJson = join(normDirect, "package.json");
+        let name = basename(normDirect);
+        if (existsSync(pkgJson)) {
+          try {
+            const raw = readFileSync(pkgJson, "utf8");
+            const parsed = JSON.parse(raw);
+            if (typeof parsed?.name === "string") {
+              name = parsed.name.replace(/^@[^/]+\//, "");
+            }
+          } catch {
+            // ignore
+          }
+        }
+        return { name, path: normDirect };
+      }
+    } catch {
+      // ignore
+    }
+
+    // Check monorepo subprojects of baseCwd
+    const subprojects = scanWorkspaceSubprojects(normBase);
+    for (const sub of subprojects) {
+      if (
+        sub.name.toLowerCase() === idLower ||
+        sub.path.toLowerCase() === normLower ||
+        normalizePath(sub.path).toLowerCase() === normLower ||
+        sub.relativePath?.toLowerCase() === idLower ||
+        basename(sub.path).toLowerCase() === idLower
+      ) {
+        return { name: sub.name, path: sub.path };
+      }
+    }
+  }
+
+  // 3. Absolute path or path relative to process.cwd()
+  const isPathLike = /[\\/:]/.test(trimmed) || isAbsolute(trimmed);
+  const normProc = normalizePath(trimmed.replace(/\/+$/, ""));
+  try {
+    if (existsSync(normProc) && statSync(normProc).isDirectory()) {
+      return { name: basename(normProc), path: normProc };
+    }
+  } catch {
+    // Ignore
+  }
+
+  // 4. If path-like, also check if directory basename matches idLower
   if (isPathLike) {
     for (const p of projects) {
       const pNorm = normalizePath(p.path).toLowerCase();
@@ -457,15 +247,32 @@ export function resolveProjectFromIdentifier(
     }
   }
 
-  // 4. If directory exists on disk directly
+  // 5. Fallback: scan workspace subprojects from process.cwd()
+  if (!baseCwd) {
+    const subprojects = scanWorkspaceSubprojects(process.cwd());
+    for (const sub of subprojects) {
+      if (
+        sub.name.toLowerCase() === idLower ||
+        sub.path.toLowerCase() === normLower ||
+        normalizePath(sub.path).toLowerCase() === normLower ||
+        sub.relativePath?.toLowerCase() === idLower ||
+        basename(sub.path).toLowerCase() === idLower
+      ) {
+        return { name: sub.name, path: sub.path };
+      }
+    }
+  }
+
+  // 6. Direct child of process.cwd()
   try {
-    if (existsSync(norm)) {
-      return { name: basename(norm), path: norm };
+    const fromProc = resolve(process.cwd(), trimmed.replace(/\/+$/, ""));
+    if (existsSync(fromProc) && statSync(fromProc).isDirectory()) {
+      return { name: basename(fromProc), path: normalizePath(fromProc) };
     }
   } catch {
     // Ignore
   }
 
-  // 5. Fallback to raw identifier
+  // 7. Fallback to raw identifier
   return { name: trimmed, path: undefined };
 }
