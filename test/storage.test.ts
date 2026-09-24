@@ -14,6 +14,7 @@ import {
   searchRecords,
   slugify,
   updateRecordStatus,
+  atomicWriteFile,
 } from "../src/storage.js";
 import type { SpaiRecord } from "../src/types.js";
 
@@ -138,3 +139,29 @@ test("saveRecord, readRecord, updateRecordStatus, and searchRecords work atomica
     await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("atomicWriteFile handles rapid concurrent writes without ENOENT or corruption", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "pi-spai-atomic-"));
+  const targetFile = join(tempDir, "concurrent-test.txt");
+
+  try {
+    const writes = Array.from({ length: 25 }, (_, i) =>
+      atomicWriteFile(targetFile, `iteration-${i}\n`),
+    );
+    await Promise.all(writes);
+
+    const record = await saveRecord(tempDir, ". Souběžný úkol :test:", "docs/spai");
+    assert.ok(record);
+
+    const concurrentUpdates = Array.from({ length: 10 }, (_, i) => {
+      const status = i % 2 === 0 ? "working" : "done";
+      return updateRecordStatus(tempDir, record.id, status, "docs/spai");
+    });
+    const results = await Promise.all(concurrentUpdates);
+    assert.equal(results.length, 10);
+    assert.ok(results.every((r) => r !== null));
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+

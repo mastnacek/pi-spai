@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import {
+  copyFile,
   mkdir,
   readFile,
   readdir,
@@ -7,7 +8,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   getSpaiDirForProject,
   loadAvailableProjects,
@@ -73,15 +74,57 @@ export async function ensureSpaiDir(
   return dir;
 }
 
-export async function atomicWriteFile(
+let writeSeq = 0;
+const writeQueues = new Map<string, Promise<void>>();
+
+function getTempPath(filePath: string): string {
+  const seq = (writeSeq = (writeSeq + 1) % 1000000);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${filePath}.${Date.now()}.${process.pid}.${seq}.${rand}.tmp`;
+}
+
+async function safeRename(src: string, dest: string): Promise<void> {
+  const maxRetries = 8;
+  let delay = 10;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await rename(src, dest);
+      return;
+    } catch (err) {
+      const code = (err as { code?: string } | null | undefined)?.code;
+      // On Windows: transient lock by antivirus / indexer / file watcher gives EPERM, EACCES, EBUSY, or ENOENT
+      if (
+        (code === "EPERM" ||
+          code === "EACCES" ||
+          code === "EBUSY" ||
+          code === "ENOENT") &&
+        i < maxRetries - 1
+      ) {
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 200);
+        continue;
+      }
+      // Fallback: copy + unlink if rename fails
+      try {
+        await copyFile(src, dest);
+        await unlink(src);
+        return;
+      } catch {
+        throw err;
+      }
+    }
+  }
+}
+
+async function doAtomicWrite(
   filePath: string,
   content: string,
 ): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${Date.now()}.${process.pid}.tmp`;
+  const tmpPath = getTempPath(filePath);
   try {
     await writeFile(tmpPath, content, "utf8");
-    await rename(tmpPath, filePath);
+    await safeRename(tmpPath, filePath);
   } catch (err) {
     try {
       await unlink(tmpPath);
@@ -89,6 +132,33 @@ export async function atomicWriteFile(
       // Ignore
     }
     throw err;
+  }
+}
+
+export async function atomicWriteFile(
+  filePath: string,
+  content: string,
+): Promise<void> {
+  const normalizedPath = resolve(filePath);
+  const previous = writeQueues.get(normalizedPath) ?? Promise.resolve();
+  let release: () => void = () => {};
+  const next = new Promise<void>((r) => {
+    release = r;
+  });
+  writeQueues.set(normalizedPath, next);
+
+  try {
+    try {
+      await previous;
+    } catch {
+      // Ignore failure from preceding write in queue
+    }
+    await doAtomicWrite(normalizedPath, content);
+  } finally {
+    release();
+    if (writeQueues.get(normalizedPath) === next) {
+      writeQueues.delete(normalizedPath);
+    }
   }
 }
 

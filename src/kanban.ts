@@ -118,6 +118,7 @@ export class KanbanBoardComponent implements Component {
   private onStatusChange?: (taskId: string, targetStatus: SpaiStatus) => void;
   private onRealizeRecord?: (record: SpaiRecord) => void;
   private isOpening = false;
+  private isUpdatingStatus = false;
 
   constructor(options: {
     cwd: string;
@@ -273,6 +274,7 @@ export class KanbanBoardComponent implements Component {
   }
 
   public async moveToStatus(targetStatus: SpaiStatus): Promise<void> {
+    if (this.isUpdatingStatus) return;
     const currentEntry = this.getSelectedRecord();
     if (!currentEntry) return;
 
@@ -283,21 +285,28 @@ export class KanbanBoardComponent implements Component {
     );
     if (targetColIdx === -1) return;
 
-    const taskId = currentEntry.id;
-    const targetCwd = currentEntry.projectPath || this.cwd;
-    const updated = await updateRecordStatus(targetCwd, taskId, targetStatus);
-    if (updated) {
-      this.index = this.onReloadIndex
-        ? await this.onReloadIndex()
-        : await loadIndex(targetCwd);
-      this.focusCol = targetColIdx;
-      const targetTasks = this.getColumnTasks(targetStatus);
-      const newIdx = targetTasks.findIndex((t) => t.id === taskId);
-      this.selectedIndices[targetColIdx] = newIdx >= 0 ? newIdx : 0;
-      this.clampSelection();
-      this.invalidate();
-      this.onStatusChange?.(taskId, targetStatus);
-      this.onRequestRender?.();
+    this.isUpdatingStatus = true;
+    try {
+      const taskId = currentEntry.id;
+      const targetCwd = currentEntry.projectPath || this.cwd;
+      const updated = await updateRecordStatus(targetCwd, taskId, targetStatus);
+      if (updated) {
+        this.index = this.onReloadIndex
+          ? await this.onReloadIndex()
+          : await loadIndex(targetCwd);
+        this.focusCol = targetColIdx;
+        const targetTasks = this.getColumnTasks(targetStatus);
+        const newIdx = targetTasks.findIndex((t) => t.id === taskId);
+        this.selectedIndices[targetColIdx] = Math.max(0, newIdx);
+        this.clampSelection();
+        this.invalidate();
+        this.onStatusChange?.(taskId, targetStatus);
+        this.onRequestRender?.();
+      }
+    } catch {
+      // Non-blocking UI update error
+    } finally {
+      this.isUpdatingStatus = false;
     }
   }
 

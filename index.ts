@@ -232,18 +232,32 @@ async function openReaderView(
 
     rebuild();
 
+    let isUpdating = false;
     const setStatus = async (status: SpaiStatus) => {
-      const updated = await updateRecordStatus(
-        ctx.cwd,
-        currentRecord.id,
-        status,
-      );
-      if (updated) {
-        currentRecord = updated;
-        invalidateCache();
-        await updateStatusBar(ctx);
-        rebuild();
-        tui.requestRender();
+      if (isUpdating) return;
+      isUpdating = true;
+      try {
+        const updated = await updateRecordStatus(
+          ctx.cwd,
+          currentRecord.id,
+          status,
+        );
+        if (updated) {
+          currentRecord = updated;
+          invalidateCache();
+          await updateStatusBar(ctx);
+          rebuild();
+          tui.requestRender();
+        }
+      } catch (err) {
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `Chyba při aktualizaci stavu: ${err instanceof Error ? err.message : String(err)}`,
+            "error",
+          );
+        }
+      } finally {
+        isUpdating = false;
       }
     };
 
@@ -253,7 +267,7 @@ async function openReaderView(
         rebuild();
         container.invalidate();
       },
-      handleInput: async (data) => {
+      handleInput: (data) => {
         if (matchesKey(data, "m")) {
           readingMode = !readingMode;
           rebuild();
@@ -270,21 +284,21 @@ async function openReaderView(
             currentRecord.status,
             currentRecord.type,
           );
-          await setStatus(nextStatus);
+          void setStatus(nextStatus);
         } else if (data === "1" || data === "t") {
-          await setStatus("todo");
+          void setStatus("todo");
         } else if (data === "2" || data === "w") {
-          await setStatus("working");
+          void setStatus("working");
         } else if (data === "3" || data === "p") {
-          await setStatus("waiting");
+          void setStatus("waiting");
         } else if (data === "4" || data === "d") {
-          await setStatus("done");
+          void setStatus("done");
         } else if (data === "5" || data === "c" || data === "z") {
-          await setStatus("cancelled");
+          void setStatus("cancelled");
         } else if (data === "6" || data === "i") {
-          await setStatus("idea");
+          void setStatus("idea");
         } else if (data === "7" || data === "n") {
-          await setStatus("note");
+          void setStatus("note");
         } else if (matchesKey(data, Key.escape) || matchesKey(data, "q")) {
           done();
         }
