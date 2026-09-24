@@ -31,6 +31,7 @@ export interface InlineMeta {
  priority?: SpaiPriority;
  deadline?: string;
  project?: string;
+ projectPath?: string;
  tags: string[];
  cleanBody: string;
 }

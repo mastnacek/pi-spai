@@ -83,6 +83,15 @@ test("extractProject parses @project and @\"project name\" without colliding wit
   assert.equal(res2.project, "my awesome project");
   assert.equal(res2.cleanText, ". Task !high");
 
+  // Should parse Windows drive paths inserted via @ autocomplete
+  const resPath = extractProject(". Task @D:/01_programovani/pi/plugins/pi-spai/ :test:");
+  assert.equal(resPath.project, "pi-spai");
+  assert.equal(resPath.cleanText, ". Task :test:");
+
+  const resQuotedPath = extractProject('. Task @"D:/01_programovani/pi/plugins/pi-spai/" !high');
+  assert.equal(resQuotedPath.project, "pi-spai");
+  assert.equal(resQuotedPath.cleanText, ". Task !high");
+
   // Should ignore dates
   const resDate = extractProject(". Task @2026-09-01");
   assert.equal(resDate.project, undefined);

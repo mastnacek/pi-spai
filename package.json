@@ -1,6 +1,6 @@
 {
   "name": "pi-spai",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SPAI Syntax & Fast Capture Ledger for Pi coding agent — tasks, ideas, notes, and project backlogs compatible with mozek_rust",
   "type": "module",
   "main": "index.ts",

@@ -22,7 +22,11 @@ import {
   createSpaiAutocompleteProvider,
   getSpaiNewCompletions,
 } from "./src/autocomplete.js";
-import { discoverAllProjects, loadAvailableProjects } from "./src/projects.js";
+import {
+  discoverAllProjects,
+  loadAvailableProjects,
+  loadProjectsConfig,
+} from "./src/projects.js";
 import {
   ensureSpaiDir,
   getIndexPath,
@@ -163,8 +167,13 @@ async function handleSessionStart(ctx: ExtensionContext): Promise<void> {
   }
 
   if (ctx.hasUI) {
+    const config = loadProjectsConfig();
     ctx.ui.addAutocompleteProvider((current) =>
-      createSpaiAutocompleteProvider(current, () => loadAvailableProjects()),
+      createSpaiAutocompleteProvider(
+        current,
+        () => loadAvailableProjects(),
+        () => config.sortBy || "name",
+      ),
     );
   }
 }
@@ -777,7 +786,12 @@ async function getCompletions(
     // Subcommand: new
     if (cmd === "new") {
       const remainder = prefix.slice(prefix.indexOf("new") + 3).trimStart();
-      return getSpaiNewCompletions(remainder);
+      const config = loadProjectsConfig();
+      return getSpaiNewCompletions(
+        remainder,
+        () => loadAvailableProjects(),
+        () => config.sortBy || "name",
+      );
     }
 
     // Subcommand: list

@@ -6,6 +6,7 @@ import type {
   SpaiStatus,
   Subtask,
 } from "./types.js";
+import { resolveProjectFromIdentifier, type ProjectSummary } from "./projects.js";
 
 /**
  * Standard SPAI Prefix Table in exact order of precedence.
@@ -155,26 +156,36 @@ export function extractDeadline(text: string): {
 }
 
 /**
- * Extracts project binding `@projectName` or `@"project name"` from text.
+ * Extracts project binding `@projectName`, `@"project name"`, `@path` or `@"path"` from text.
  * Skips dates (e.g. @2026-09-01, @01.09.).
  */
-export function extractProject(text: string): {
+export function extractProject(
+  text: string,
+  getProjects?: () => ProjectSummary[],
+): {
   project?: string;
+  projectPath?: string;
   cleanText: string;
 } {
   const projectRe =
-    /(?:^|\s)@(?:"([^"\n]+)"|([a-zA-Z0-9_./-]+))(?:\s|$)/;
+    /(?:^|\s)@(?:"([^"\n]+)"|([a-zA-Z0-9_./:\\-]+))(?:\s|$)/;
   const match = text.match(projectRe);
   if (match) {
     const rawVal = match[1] ?? match[2];
     if (
+      !rawVal ||
       /^\d{4}-\d{2}-\d{2}$/.test(rawVal) ||
       /^\d{1,2}\.\d{1,2}\.(?:\d{4})?$/.test(rawVal)
     ) {
       return { cleanText: text };
     }
     const cleanText = text.replace(projectRe, " ").trim();
-    return { project: rawVal, cleanText };
+    const resolved = resolveProjectFromIdentifier(rawVal, getProjects);
+    return {
+      project: resolved.name,
+      projectPath: resolved.path,
+      cleanText,
+    };
   }
   return { cleanText: text };
 }
@@ -182,15 +193,19 @@ export function extractProject(text: string): {
 /**
  * Parses all inline metadata (`!`, `@deadline`, `@project`, `:tags:`) from text.
  */
-export function parseInlineMeta(text: string): InlineMeta {
+export function parseInlineMeta(
+  text: string,
+  getProjects?: () => ProjectSummary[],
+): InlineMeta {
   const p = extractPriority(text);
   const d = extractDeadline(p.cleanText);
-  const pr = extractProject(d.cleanText);
+  const pr = extractProject(d.cleanText, getProjects);
   const t = extractInlineTags(pr.cleanText);
   return {
     priority: p.priority,
     deadline: d.deadline,
     project: pr.project,
+    projectPath: pr.projectPath,
     tags: t.tags,
     cleanBody: t.cleanText,
   };

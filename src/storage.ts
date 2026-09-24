@@ -8,7 +8,12 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { getSpaiDirForProject, loadAvailableProjects, type ProjectSummary } from "./projects.js";
+import {
+  getSpaiDirForProject,
+  loadAvailableProjects,
+  resolveProjectFromIdentifier,
+  type ProjectSummary,
+} from "./projects.js";
 import {
   parseInlineMeta,
   parseSpai,
@@ -147,13 +152,15 @@ export function formatSpaiMarkdown(record: SpaiRecord): string {
     frontmatterLines.push(`tags: [${record.tags.join(", ")}]`);
   }
 
-  if (record.priority || record.deadline || record.project) {
+  if (record.priority || record.deadline || record.project || record.projectPath) {
     frontmatterLines.push("facets:");
     if (record.priority)
       frontmatterLines.push(`  priority: ${record.priority}`);
     if (record.deadline)
       frontmatterLines.push(`  deadline: ${record.deadline}`);
     if (record.project) frontmatterLines.push(`  project: ${record.project}`);
+    if (record.projectPath)
+      frontmatterLines.push(`  project_path: ${record.projectPath}`);
   }
 
   if (record.symbol) {
@@ -208,6 +215,7 @@ export function parseSpaiMarkdown(
   let priority: SpaiPriority | undefined = inlineMeta.priority;
   let deadline: string | undefined = inlineMeta.deadline;
   let project: string | undefined = inlineMeta.project;
+  let projectPath: string | undefined = inlineMeta.projectPath;
   const tags: string[] = [...inlineMeta.tags];
 
   // Parse simple YAML keys if present
@@ -240,6 +248,9 @@ export function parseSpaiMarkdown(
 
     const projM = yamlRaw.match(/project:\s*(.+)$/m);
     if (projM) project = projM[1].trim();
+
+    const projPathM = yamlRaw.match(/project_path:\s*(.+)$/m);
+    if (projPathM) projectPath = projPathM[1].trim();
   }
 
   return {
@@ -254,6 +265,7 @@ export function parseSpaiMarkdown(
     priority,
     deadline,
     project,
+    projectPath: projectPath || inlineMeta.projectPath,
     file: fileName,
     body: cleanBody,
     subtasks,
@@ -288,6 +300,7 @@ export async function rebuildIndex(
               priority: parsed.priority,
               deadline: parsed.deadline,
               project: parsed.project,
+              projectPath: parsed.projectPath,
               file,
             });
           }
@@ -340,12 +353,30 @@ export async function saveRecord(
   dirOverride?: string,
   projectHint?: string,
 ): Promise<SpaiRecord> {
-  const dir = await ensureSpaiDir(cwd, dirOverride);
-  const index = await loadIndex(cwd, dirOverride);
-
   const parsed = parseSpai(rawText);
   const inlineMeta = parseInlineMeta(rawText);
   const subtasks = parseSubtasks(rawText);
+
+  let targetCwd = cwd;
+  let projectName = inlineMeta.project;
+  let projectPath = inlineMeta.projectPath;
+
+  if (projectHint) {
+    const resolved = resolveProjectFromIdentifier(projectHint);
+    projectName = projectName || resolved.name;
+    projectPath = projectPath || resolved.path;
+  } else if (!projectPath && inlineMeta.project) {
+    const resolved = resolveProjectFromIdentifier(inlineMeta.project);
+    projectName = resolved.name;
+    projectPath = resolved.path;
+  }
+
+  if (!dirOverride && projectPath && existsSync(projectPath)) {
+    targetCwd = projectPath;
+  }
+
+  const dir = await ensureSpaiDir(targetCwd, dirOverride);
+  const index = await loadIndex(targetCwd, dirOverride);
 
   const id = getNextId(index.records);
   const timestamp = formatDateTime();
@@ -365,8 +396,10 @@ export async function saveRecord(
     description: inlineMeta.cleanBody.slice(0, 120),
     priority: inlineMeta.priority,
     deadline: inlineMeta.deadline,
-    project: inlineMeta.project || projectHint || basename(cwd),
+    project: projectName || basename(targetCwd),
+    projectPath: targetCwd,
     file: fileName,
+    filePath,
     body: rawText,
     subtasks,
   };
@@ -385,6 +418,7 @@ export async function saveRecord(
     priority: record.priority,
     deadline: record.deadline,
     project: record.project,
+    projectPath: record.projectPath,
     file: record.file,
   };
 
@@ -397,7 +431,7 @@ export async function saveRecord(
   });
   index.lastUpdated = formatDateTime();
 
-  const indexPath = getIndexPath(cwd, dirOverride);
+  const indexPath = getIndexPath(targetCwd, dirOverride);
   await atomicWriteFile(indexPath, JSON.stringify(index, null, 2) + "\n");
 
   return { ...record, rawContent: markdown };
