@@ -1,10 +1,10 @@
-import {
-  type Component,
-  Key,
-  matchesKey,
-  truncateToWidth,
-  visibleWidth,
-} from "@earendil-works/pi-tui";
+// pi-spai — kanban board component.
+//
+// Rendering and the read-only queries live in `src/kanban-view.ts` and the
+// `src/kanban-render*.ts` modules, the column model in `src/kanban-model.ts`. This
+// module owns the state, the callbacks, the mutations and the input handling, and
+// re-exports the model so existing importers are unaffected.
+import { type Component, Key, matchesKey } from "@earendil-works/pi-tui";
 import { loadIndex, readRecord, updateRecordStatus } from "./storage.js";
 import type { ProjectSummary } from "./projects.js";
 import type {
@@ -13,111 +13,50 @@ import type {
   SpaiRecord,
   SpaiStatus,
 } from "./types.js";
-import {
-  coralGlow,
-  cyanGlow,
-  defaultBold,
-  dividerGlow,
-  getStatusCounts,
-  goldGlow,
-  greenGlow,
-  pinkGlow,
-  renderSpaiRibbon,
-  slateGlow,
-  violetGlow,
-} from "./viewer.js";
+import { KANBAN_COLUMNS } from "./kanban-model.js";
+import { getVisibleRecords, getColumnTasks, getSelectedRecord, getPickerOptions, clampSelection, KanbanView } from "./kanban-view.js";
+import { renderWide, renderProjectPicker } from "./kanban-render.js";
+import { renderNarrow } from "./kanban-render-narrow.js";
 
-export interface KanbanColumn {
-  status: SpaiStatus;
-  label: string;
-  glyph: string;
-  shortcut: string;
-  colorFn: (text: string) => string;
-  bgColorAnsi: string;
-}
-
-export const KANBAN_COLUMNS: KanbanColumn[] = [
-  {
-    status: "todo",
-    label: "TODO",
-    glyph: "○",
-    shortcut: "1",
-    colorFn: pinkGlow,
-    bgColorAnsi: "\x1b[48;2;249;77;255m\x1b[38;2;13;17;22m",
-  },
-  {
-    status: "working",
-    label: "WORKING",
-    glyph: "◐",
-    shortcut: "2",
-    colorFn: goldGlow,
-    bgColorAnsi: "\x1b[48;2;241;252;121m\x1b[38;2;13;17;22m",
-  },
-  {
-    status: "waiting",
-    label: "WAITING",
-    glyph: "⏳",
-    shortcut: "3",
-    colorFn: violetGlow,
-    bgColorAnsi: "\x1b[48;2;152;122;251m\x1b[38;2;13;17;22m",
-  },
-  {
-    status: "done",
-    label: "DONE",
-    glyph: "✓",
-    shortcut: "4",
-    colorFn: greenGlow,
-    bgColorAnsi: "\x1b[48;2;55;244;153m\x1b[38;2;13;17;22m",
-  },
-  {
-    status: "cancelled",
-    label: "CANCELLED",
-    glyph: "✗",
-    shortcut: "5",
-    colorFn: slateGlow,
-    bgColorAnsi: "\x1b[48;2;95;107;138m\x1b[38;2;255;255;255m",
-  },
-];
-
-function padToWidth(text: string, width: number): string {
-  const vWidth = visibleWidth(text);
-  if (vWidth >= width) {
-    return truncateToWidth(text, width, "…");
-  }
-  return text + " ".repeat(Math.max(0, width - vWidth));
-}
-
-function computeColWidths(totalWidth: number, numCols: number): number[] {
-  const innerSpace = totalWidth - 2 - (numCols - 1);
-  const available = Math.max(numCols, innerSpace);
-  const base = Math.floor(available / numCols);
-  const remainder = available % numCols;
-  const widths: number[] = [];
-  for (let i = 0; i < numCols; i++) {
-    widths.push(base + (i < remainder ? 1 : 0));
-  }
-  return widths;
-}
+export { KanbanColumn, KANBAN_COLUMNS } from "./kanban-model.js";
 
 export class KanbanBoardComponent implements Component {
   private cwd: string;
+
   private index: SpaiIndex;
+
   private projects: ProjectSummary[];
+
   private activeProjectFilter = "ALL";
+
   private mode: "board" | "project_picker" = "board";
+
   private pickerIdx = 0;
+
   private onReloadIndex?: () => Promise<SpaiIndex>;
+
   private focusCol = 0;
+
   private selectedIndices: number[] = [0, 0, 0, 0, 0];
+
   private onOpenRecord?: (record: SpaiRecord) => void;
+
   private onNewTask?: () => void;
+
   private onClose: () => void;
+
   private cachedWidth?: number;
+
   private cachedLines?: string[];
+
   private onRequestRender?: () => void;
+
   private onStatusChange?: (taskId: string, targetStatus: SpaiStatus) => void;
+
   private onRealizeRecord?: (record: SpaiRecord) => void;
+
   private isOpening = false;
+
   private isUpdatingStatus = false;
 
   constructor(options: {
@@ -152,23 +91,13 @@ export class KanbanBoardComponent implements Component {
   }
 
   /** Records visible under the active project filter. */
-  public getVisibleRecords(): SpaiIndexEntry[] {
-    if (this.activeProjectFilter === "ALL") {
-      return this.index.records;
-    }
-    const f = this.activeProjectFilter.toLowerCase();
-    return this.index.records.filter(
-      (r) =>
-        r.project?.toLowerCase() === f ||
-        r.projectPath?.toLowerCase() === f,
-    );
-  }
 
   public getActiveProjectFilter(): string {
     return this.activeProjectFilter;
   }
 
   /** ALL -> project 1 -> ... -> ALL cycle, ported from spai.ledger. */
+
   public toggleProjectFilter(direction: "next" | "prev" = "next"): void {
     const options = [
       "ALL",
@@ -190,20 +119,8 @@ export class KanbanBoardComponent implements Component {
     this.onRequestRender?.();
   }
 
-  private getPickerOptions(): Array<{ label: string; value: string }> {
-    return [
-      { label: "★ ALL PROJECTS", value: "ALL" },
-      ...this.projects
-        .filter((p) => p.hasSpai !== false)
-        .map((p) => ({
-          label: `📁 ${p.name} (${p.taskCount ?? 0})`,
-          value: p.name,
-        })),
-    ];
-  }
-
   private handlePickerInput(data: string): void {
-    const options = this.getPickerOptions();
+    const options = getPickerOptions(this.view());
     if (matchesKey(data, Key.escape) || data === "q") {
       this.mode = "board";
       this.invalidate();
@@ -230,52 +147,9 @@ export class KanbanBoardComponent implements Component {
     }
   }
 
-  private getFilterLabel(): string {
-    return this.activeProjectFilter === "ALL"
-      ? "★ ALL PROJECTS"
-      : `📁 ${this.activeProjectFilter}`;
-  }
-
-  private getColumnTasks(status: SpaiStatus): SpaiIndexEntry[] {
-    const visible = this.getVisibleRecords();
-    return visible.filter(
-      (r) =>
-        r.status === status &&
-        (r.type === "Todo" ||
-          (!r.type &&
-            ["todo", "working", "waiting", "done", "cancelled"].includes(
-              r.status,
-            ))),
-    );
-  }
-
-  private getSelectedRecord(): SpaiIndexEntry | null {
-    const col = KANBAN_COLUMNS[this.focusCol];
-    if (!col) return null;
-    const tasks = this.getColumnTasks(col.status);
-    const selectedIdx = this.selectedIndices[this.focusCol] ?? 0;
-    return tasks[selectedIdx] ?? null;
-  }
-
-  private clampSelection(): void {
-    for (let c = 0; c < KANBAN_COLUMNS.length; c++) {
-      const col = KANBAN_COLUMNS[c];
-      if (!col) continue;
-      const tasks = this.getColumnTasks(col.status);
-      const cur = this.selectedIndices[c] ?? 0;
-      if (tasks.length === 0) {
-        this.selectedIndices[c] = 0;
-      } else if (cur >= tasks.length) {
-        this.selectedIndices[c] = tasks.length - 1;
-      } else if (cur < 0) {
-        this.selectedIndices[c] = 0;
-      }
-    }
-  }
-
   public async moveToStatus(targetStatus: SpaiStatus): Promise<void> {
     if (this.isUpdatingStatus) return;
-    const currentEntry = this.getSelectedRecord();
+    const currentEntry = getSelectedRecord(this.view());
     if (!currentEntry) return;
 
     if (currentEntry.status === targetStatus) return;
@@ -295,7 +169,7 @@ export class KanbanBoardComponent implements Component {
           ? await this.onReloadIndex()
           : await loadIndex(targetCwd);
         this.focusCol = targetColIdx;
-        const targetTasks = this.getColumnTasks(targetStatus);
+        const targetTasks = getColumnTasks(this.view(), targetStatus);
         const newIdx = targetTasks.findIndex((t) => t.id === taskId);
         this.selectedIndices[targetColIdx] = Math.max(0, newIdx);
         this.clampSelection();
@@ -311,7 +185,7 @@ export class KanbanBoardComponent implements Component {
   }
 
   public async moveSelectedTask(direction: "left" | "right"): Promise<void> {
-    const currentEntry = this.getSelectedRecord();
+    const currentEntry = getSelectedRecord(this.view());
     if (!currentEntry) return;
 
     let targetColIdx = this.focusCol;
@@ -382,7 +256,7 @@ export class KanbanBoardComponent implements Component {
     } else if (matchesKey(data, Key.down) || data === "j") {
       const col = KANBAN_COLUMNS[this.focusCol];
       if (col) {
-        const tasks = this.getColumnTasks(col.status);
+        const tasks = getColumnTasks(this.view(), col.status);
         const curIdx = this.selectedIndices[this.focusCol] ?? 0;
         if (curIdx < tasks.length - 1) {
           this.selectedIndices[this.focusCol] = curIdx + 1;
@@ -393,7 +267,7 @@ export class KanbanBoardComponent implements Component {
     }
     // Toggle / mark done quick key: x
     else if (data === "x") {
-      const current = this.getSelectedRecord();
+      const current = getSelectedRecord(this.view());
       if (current) {
         const next = current.status === "done" ? "todo" : "done";
         void this.moveToStatus(next);
@@ -426,7 +300,7 @@ export class KanbanBoardComponent implements Component {
     }
     // Realize task with agent: r
     else if (data === "r") {
-      const entry = this.getSelectedRecord();
+      const entry = getSelectedRecord(this.view());
       if (entry && this.onRealizeRecord && !this.isOpening) {
         this.isOpening = true;
         void readRecord(entry.projectPath || this.cwd, entry.id)
@@ -443,7 +317,7 @@ export class KanbanBoardComponent implements Component {
     }
     // Open detail on Enter
     else if (matchesKey(data, Key.enter)) {
-      const entry = this.getSelectedRecord();
+      const entry = getSelectedRecord(this.view());
       if (entry && this.onOpenRecord && !this.isOpening) {
         this.isOpening = true;
         void readRecord(entry.projectPath || this.cwd, entry.id)
@@ -470,421 +344,18 @@ export class KanbanBoardComponent implements Component {
 
   render(width: number): string[] {
     if (this.mode === "project_picker") {
-      return this.renderProjectPicker(width);
+      return renderProjectPicker(this.view(), width);
     }
 
     if (this.cachedLines && this.cachedWidth === width) {
       return this.cachedLines;
     }
 
-    const lines =
-      width < 75 ? this.renderNarrow(width) : this.renderWide(width);
+    const view = this.view();
+    const lines = width < 75 ? renderNarrow(view, width) : renderWide(view, width);
 
     this.cachedWidth = width;
     this.cachedLines = lines;
-    return lines;
-  }
-
-  private renderProjectPicker(width: number): string[] {
-    const lines: string[] = [];
-    const innerWidth = Math.max(10, width - 2);
-    const border = (s: string) => dividerGlow(s);
-    const options = this.getPickerOptions();
-
-    lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
-    lines.push(
-      border("│") +
-        padToWidth(
-          defaultBold(violetGlow(" ◈ VÝBĚR PROJEKTU ◈")),
-          innerWidth,
-        ) +
-        border("│"),
-    );
-    lines.push(border(`├${"─".repeat(innerWidth)}┤`));
-
-    options.forEach((opt, idx) => {
-      const marker = opt.value === "ALL" ? "★" : "📁";
-      const raw = ` ${idx === this.pickerIdx ? "▶" : " "} ${marker} ${opt.label}`;
-      const styled =
-        idx === this.pickerIdx
-          ? defaultBold(cyanGlow(truncateToWidth(raw, innerWidth, "…")))
-          : dividerGlow(truncateToWidth(raw, innerWidth, "…"));
-      lines.push(border("│") + padToWidth(styled, innerWidth) + border("│"));
-    });
-
-    lines.push(border(`├${"─".repeat(innerWidth)}┤`));
-    lines.push(
-      border("│") +
-        padToWidth(
-          cyanGlow(
-            "  ↑/↓ nebo j/k: výběr   enter: potvrdit   esc/q: zavřít",
-          ),
-          innerWidth,
-        ) +
-        border("│"),
-    );
-    lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
-    return lines;
-  }
-
-  private renderNarrow(width: number): string[] {
-    const lines: string[] = [];
-    const maxRows = 10;
-    const innerWidth = Math.max(10, width - 2);
-    const border = (s: string) => dividerGlow(s);
-
-    // 1. Top Outer Frame
-    lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
-
-    // 2. Title & Live Stats Banner
-    const counts = getStatusCounts({ records: this.getVisibleRecords() } as SpaiIndex);
-    const activeTasks = counts.todo + counts.working;
-    const doneTasks = counts.done;
-    const totalTasks = counts.totalTasks;
-
-    const titleLeft = defaultBold(
-      pinkGlow(` ◈ SPAI BOARD · ${this.getFilterLabel()} ◈`),
-    );
-    const statsRight = `${goldGlow(`⚡${activeTasks}`)} ${greenGlow(`✓${doneTasks}`)} ${violetGlow(`Σ${totalTasks}`)} `;
-    const bannerSpaces = Math.max(
-      1,
-      innerWidth - visibleWidth(titleLeft) - visibleWidth(statsRight),
-    );
-    lines.push(
-      border("│") +
-        padToWidth(
-          truncateToWidth(
-            `${titleLeft}${" ".repeat(bannerSpaces)}${statsRight}`,
-            innerWidth,
-          ),
-          innerWidth,
-        ) +
-        border("│"),
-    );
-
-    // 3. Horizontal Status Tabs Row
-    const tabSegments = KANBAN_COLUMNS.map((col, idx) => {
-      const tasks = this.getColumnTasks(col.status);
-      const isFocused = this.focusCol === idx;
-      const label = `${col.shortcut} ${col.glyph}`;
-      const count = `${tasks.length}`;
-      if (isFocused) {
-        return `${col.bgColorAnsi} \x1b[1m▶ ${label} (${count}) ◀\x1b[0m`;
-      }
-      return col.colorFn(`[${label}:${count}]`);
-    });
-    lines.push(
-      border("│") +
-        padToWidth(` ${tabSegments.join(" ")}`, innerWidth) +
-        border("│"),
-    );
-
-    // 4. Status Ribbon Row
-    const ribbonStr = ` ${renderSpaiRibbon(counts, Math.max(10, innerWidth - 14))}`;
-    lines.push(border("│") + padToWidth(ribbonStr, innerWidth) + border("│"));
-
-    // 5. Divider under Tabs
-    lines.push(border(`├${"─".repeat(innerWidth)}┤`));
-
-    // 5. Active Column Banner
-    const activeCol = KANBAN_COLUMNS[this.focusCol] ?? KANBAN_COLUMNS[0];
-    const activeTasksList = this.getColumnTasks(activeCol.status);
-    const colHeader = defaultBold(
-      activeCol.colorFn(
-        `  ${activeCol.glyph} ${activeCol.label} [${activeCol.shortcut}] — ${activeTasksList.length} úkolů (←/→ pro přepnutí)`,
-      ),
-    );
-    lines.push(border("│") + padToWidth(colHeader, innerWidth) + border("│"));
-    lines.push(border(`├${"─".repeat(innerWidth)}┤`));
-
-    // 6. Task List Rows
-    const curIdx = this.selectedIndices[this.focusCol] ?? 0;
-    if (activeTasksList.length === 0) {
-      lines.push(
-        border("│") +
-          padToWidth(
-            dividerGlow(
-              "   · Žádné úkoly v tomto sloupci · (stiskni [n] pro nový)",
-            ),
-            innerWidth,
-          ) +
-          border("│"),
-      );
-      for (let r = 1; r < maxRows; r++) {
-        lines.push(border("│") + " ".repeat(innerWidth) + border("│"));
-      }
-    } else {
-      for (let r = 0; r < maxRows; r++) {
-        const task = activeTasksList[r];
-        if (task) {
-          const isSelected = r === curIdx;
-          const prioMark =
-            task.priority === "high"
-              ? coralGlow(" ⚡")
-              : task.priority === "low"
-                ? slateGlow(" ▽")
-                : "";
-          const deadMark = task.deadline ? goldGlow(` ⏰${task.deadline}`) : "";
-          const tagsMark =
-            task.tags.length > 0 ? violetGlow(` :${task.tags.join(":")}:`) : "";
-          const id = task.id.replace(/^SPAI-0*/i, "#");
-          const meta = `${prioMark}${deadMark}${tagsMark}`;
-          const metaW = visibleWidth(meta);
-
-          if (isSelected) {
-            const prefix = " ▸ ";
-            const availTitle = Math.max(
-              4,
-              innerWidth - visibleWidth(prefix) - id.length - metaW - 2,
-            );
-            const truncatedTitle = truncateToWidth(task.title, availTitle, "…");
-            const leftPart = `${prefix}${id} ${truncatedTitle}`;
-            const spaces = Math.max(
-              1,
-              innerWidth - visibleWidth(leftPart) - metaW - 2,
-            );
-            const content = `${leftPart}${" ".repeat(spaces)}${meta} `;
-            const highlighted = `${activeCol.bgColorAnsi}\x1b[1m${padToWidth(content, innerWidth)}\x1b[0m`;
-            lines.push(border("│") + highlighted + border("│"));
-          } else {
-            const prefix = "   ";
-            const styledId = activeCol.colorFn(id);
-            const availTitle = Math.max(
-              4,
-              innerWidth - visibleWidth(prefix) - id.length - metaW - 2,
-            );
-            const truncatedTitle = truncateToWidth(task.title, availTitle, "…");
-            const leftPart = `${prefix}${styledId} ${truncatedTitle}`;
-            const spaces = Math.max(
-              1,
-              innerWidth - visibleWidth(leftPart) - metaW - 2,
-            );
-            const content = `${leftPart}${" ".repeat(spaces)}${meta} `;
-            lines.push(
-              border("│") + padToWidth(content, innerWidth) + border("│"),
-            );
-          }
-        } else {
-          lines.push(border("│") + " ".repeat(innerWidth) + border("│"));
-        }
-      }
-    }
-
-    // 7. Divider before Inspector
-    lines.push(border(`├${"─".repeat(innerWidth)}┤`));
-
-    // 8. Active Task Inspector Footer
-    const selectedTask = this.getSelectedRecord();
-    let footerDetail: string;
-    if (selectedTask) {
-      const idStr = pinkGlow(selectedTask.id);
-      const titleStr = defaultBold(selectedTask.title);
-      const statusBadge = colBadge(selectedTask.status);
-      const prioStr =
-        selectedTask.priority === "high"
-          ? coralGlow(" ⚡VYSOKÁ")
-          : selectedTask.priority === "low"
-            ? slateGlow(" ▽NÍZKÁ")
-            : "";
-      const deadStr = selectedTask.deadline
-        ? goldGlow(` ⏰${selectedTask.deadline}`)
-        : "";
-      const tagsStr =
-        selectedTask.tags.length > 0
-          ? violetGlow(` :${selectedTask.tags.join(":")}:`)
-          : "";
-
-      footerDetail = ` ▶ ${idStr} ${titleStr} ${statusBadge}${prioStr}${deadStr}${tagsStr}`;
-    } else {
-      const colName = activeCol?.label ?? "SLOUPEC";
-      footerDetail = violetGlow(
-        `   Sloupec ${colName} je prázdný — stiskni [n] pro přidání úkolu.`,
-      );
-    }
-    lines.push(
-      border("│") + padToWidth(footerDetail, innerWidth) + border("│"),
-    );
-
-    // 9. Compact Hotkeys Line
-    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: stav  ${cyanGlow("r")}: realize  ${cyanGlow("enter")}: detail  ${cyanGlow("esc")}: zavřít`;
-    lines.push(border("│") + padToWidth(hintText, innerWidth) + border("│"));
-
-    // 10. Bottom Outer Frame
-    lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
-
-    return lines;
-  }
-
-  private renderWide(width: number): string[] {
-    const lines: string[] = [];
-    const maxRows = 10;
-    const numCols = KANBAN_COLUMNS.length;
-    const colWidths = computeColWidths(width, numCols);
-
-    const innerWidth = width - 2; // inside left/right border
-    const border = (s: string) => dividerGlow(s);
-
-    // 1. Top Outer Frame
-    lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
-
-    // 2. Title & Live Stats Banner
-    const countsWide = getStatusCounts({ records: this.getVisibleRecords() } as SpaiIndex);
-    const activeTasks = countsWide.todo + countsWide.working;
-    const doneTasks = countsWide.done;
-    const totalTasks = countsWide.totalTasks;
-
-    const titleLeft = defaultBold(
-      pinkGlow(` ◈ SPAI KANBAN · ${this.getFilterLabel()} ◈`),
-    );
-    const extraInfo =
-      countsWide.ideas > 0 || countsWide.notes > 0
-        ? ` (${countsWide.totalItems} celkem)`
-        : "";
-    const statsRight = `${goldGlow(`⚡ ${activeTasks} aktivních`)}  ${greenGlow(`✓ ${doneTasks} hotovo`)}  ${violetGlow(`Σ ${totalTasks} úkolů${extraInfo}`)} `;
-    const bannerSpaces = Math.max(
-      1,
-      innerWidth - visibleWidth(titleLeft) - visibleWidth(statsRight),
-    );
-    lines.push(
-      border("│") +
-        padToWidth(
-          truncateToWidth(
-            `${titleLeft}${" ".repeat(bannerSpaces)}${statsRight}`,
-            innerWidth,
-          ),
-          innerWidth,
-        ) +
-        border("│"),
-    );
-
-    // 3. Status Ribbon Row
-    const ribbonWide = ` ${renderSpaiRibbon(countsWide, Math.max(10, innerWidth - 14))}`;
-    lines.push(border("│") + padToWidth(ribbonWide, innerWidth) + border("│"));
-
-    // 4. Compact Hints / Hotkeys Line
-    const hintText = `  ${cyanGlow("←→")}: sloupec  ${cyanGlow("↑↓")}: úkol  ${cyanGlow("1-5")}: stav  ${cyanGlow("p")}: projekt  ${cyanGlow("o")}: výběr  ${cyanGlow("r")}: realize  ${cyanGlow("enter")}: detail  ${cyanGlow("n")}: nový  ${cyanGlow("esc")}: zavřít`;
-    lines.push(border("│") + padToWidth(hintText, innerWidth) + border("│"));
-
-    // 4. Header Top Grid Border
-    const headerTopSep = colWidths.map((w) => "─".repeat(w)).join("┬");
-    lines.push(border(`├${headerTopSep}┤`));
-
-    // 5. Column Headers
-    const headerSegments: string[] = [];
-    for (let c = 0; c < numCols; c++) {
-      const col = KANBAN_COLUMNS[c];
-      const w = colWidths[c] ?? 16;
-      if (!col) continue;
-      const tasks = this.getColumnTasks(col.status);
-      const isFocused = this.focusCol === c;
-
-      const badge = `[${col.shortcut}]`;
-      const countStr = `(${tasks.length})`;
-
-      let headerStr: string;
-      if (isFocused) {
-        const titleText = `${col.glyph} ${col.label} ${badge} ${countStr}`;
-        headerStr = defaultBold(col.colorFn(` ▶ ${titleText}`));
-      } else {
-        const titleText = `${col.glyph} ${col.label} ${badge} ${countStr}`;
-        headerStr = col.colorFn(`   ${titleText}`);
-      }
-      headerSegments.push(padToWidth(headerStr, w));
-    }
-    lines.push(border("│") + headerSegments.join(border("│")) + border("│"));
-
-    // 6. Header Bottom Grid Border
-    const headerBottomSep = colWidths.map((w) => "─".repeat(w)).join("┼");
-    lines.push(border(`├${headerBottomSep}┤`));
-
-    // 7. Column Task Rows
-    for (let r = 0; r < maxRows; r++) {
-      const rowSegments: string[] = [];
-      for (let c = 0; c < numCols; c++) {
-        const col = KANBAN_COLUMNS[c];
-        const w = colWidths[c] ?? 16;
-        if (!col) {
-          rowSegments.push(" ".repeat(w));
-          continue;
-        }
-        const tasks = this.getColumnTasks(col.status);
-        const task = tasks[r];
-        const isFocused = this.focusCol === c;
-        const isSelected = isFocused && this.selectedIndices[c] === r;
-
-        if (task) {
-          const prioMark = task.priority === "high" ? "⚡" : "";
-          const id = task.id.replace(/^SPAI-0*/i, "#");
-          const availWidth = Math.max(8, w - 3);
-          const rawContent = `${id} ${task.title}${prioMark ? " " + prioMark : ""}`;
-          const truncatedContent = truncateToWidth(rawContent, availWidth, "…");
-
-          let cellText: string;
-          if (isSelected) {
-            const highlighted = `${col.bgColorAnsi} \x1b[1m${truncatedContent}\x1b[0m`;
-            cellText = ` ▸${highlighted}`;
-          } else {
-            const styledId = col.colorFn(id);
-            const displayTitle = task.title.slice(
-              0,
-              Math.max(4, availWidth - id.length - 1),
-            );
-            const styledPrio = prioMark ? coralGlow(` ${prioMark}`) : "";
-            cellText = `   ${styledId} ${displayTitle}${styledPrio}`;
-          }
-          rowSegments.push(padToWidth(cellText, w));
-        } else if (r === 0 && tasks.length === 0) {
-          const emptyText = isFocused
-            ? col.colorFn("   · prázdné ·")
-            : dividerGlow("   · — ·");
-          rowSegments.push(padToWidth(emptyText, w));
-        } else {
-          rowSegments.push(" ".repeat(w));
-        }
-      }
-      lines.push(border("│") + rowSegments.join(border("│")) + border("│"));
-    }
-
-    // 8. Grid Bottom Border
-    const gridBottomSep = colWidths.map((w) => "─".repeat(w)).join("┴");
-    lines.push(border(`├${gridBottomSep}┤`));
-
-    // 9. Active Task Inspector Footer
-    const selectedTask = this.getSelectedRecord();
-    let footerDetail: string;
-    if (selectedTask) {
-      const idStr = pinkGlow(selectedTask.id);
-      const titleStr = defaultBold(selectedTask.title);
-      const statusBadge = colBadge(selectedTask.status);
-      const prioStr =
-        selectedTask.priority === "high"
-          ? coralGlow(" ⚡ VYSOKÁ")
-          : selectedTask.priority === "low"
-            ? slateGlow(" ▽ NÍZKÁ")
-            : "";
-      const deadStr = selectedTask.deadline
-        ? goldGlow(` ⏰ ${selectedTask.deadline}`)
-        : "";
-      const tagsStr =
-        selectedTask.tags.length > 0
-          ? violetGlow(` :${selectedTask.tags.join(":")}:`)
-          : "";
-
-      footerDetail = ` ▶ ${idStr} ${titleStr} ${statusBadge}${prioStr}${deadStr}${tagsStr}`;
-    } else {
-      const activeCol = KANBAN_COLUMNS[this.focusCol];
-      const colName = activeCol?.label ?? "SLOUPEC";
-      footerDetail = violetGlow(
-        `   Sloupec ${colName} je prázdný — stiskni [n] pro přidání nového úkolu.`,
-      );
-    }
-    lines.push(
-      border("│") + padToWidth(footerDetail, innerWidth) + border("│"),
-    );
-
-    // 10. Bottom Outer Frame
-    lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
-
     return lines;
   }
 
@@ -892,10 +363,27 @@ export class KanbanBoardComponent implements Component {
     this.cachedWidth = undefined;
     this.cachedLines = undefined;
   }
-}
 
-function colBadge(status: SpaiStatus): string {
-  const col = KANBAN_COLUMNS.find((c) => c.status === status);
-  if (!col) return status;
-  return col.colorFn(`[${col.glyph} ${col.label}]`);
+  /**
+   * Snapshot for the renderers. The arrays are shared, not copied, and the renderers
+   * only read — so the cache and the selection state stay in one place.
+   */
+  private view(): KanbanView {
+    return {
+      index: this.index,
+      projects: this.projects,
+      activeProjectFilter: this.activeProjectFilter,
+      pickerIdx: this.pickerIdx,
+      focusCol: this.focusCol,
+      selectedIndices: this.selectedIndices,
+    };
+  }
+
+  public getVisibleRecords(): SpaiIndexEntry[] {
+    return getVisibleRecords(this.view());
+  }
+
+  private clampSelection(): void {
+    clampSelection(this.view());
+  }
 }
