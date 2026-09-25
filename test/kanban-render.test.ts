@@ -156,9 +156,11 @@ test("o opens the project picker and escape returns to the board", () => {
 	const picker = lines(board, 100);
 	assert.equal(picker.length, 9, "picker line count");
 	assert.match(picker.join("\n"), /◈ VÝBĚR PROJEKTU ◈/);
-	assert.match(picker.join("\n"), /★ ALL PROJECTS/);
+	assert.match(picker.join("\n"), /▶ ★ ALL PROJECTS/, "single marker, not doubled");
+	assert.equal(/★ ★/.test(picker.join("\n")), false, "FIXED: the marker used to be doubled");
 	assert.match(picker.join("\n"), /📁 alpha \(2\)/);
 	assert.match(picker.join("\n"), /📁 beta \(1\)/);
+	assert.equal(/📁 📁/.test(picker.join("\n")), false, "FIXED: no doubled folder marker");
 	assert.match(picker[3] ?? "", /▶/, "first option is marked");
 	assert.match(picker.join("\n"), /↑\/↓ nebo j\/k: výběr/);
 

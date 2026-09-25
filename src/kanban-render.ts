@@ -38,8 +38,9 @@ export function renderProjectPicker(view: KanbanView, width: number) : string[] 
   lines.push(border(`├${"─".repeat(innerWidth)}┤`));
 
   options.forEach((opt, idx) => {
-    const marker = opt.value === "ALL" ? "★" : "📁";
-    const raw = ` ${idx === view.pickerIdx ? "▶" : " "} ${marker} ${opt.label}`;
+    // The labels already carry their ★/📁 marker, so only the cursor is added here
+    // (this used to prepend the marker a second time: "★ ★ ALL PROJECTS").
+    const raw = ` ${idx === view.pickerIdx ? "▶" : " "} ${opt.label}`;
     const styled =
       idx === view.pickerIdx
         ? defaultBold(cyanGlow(truncateToWidth(raw, innerWidth, "…")))
