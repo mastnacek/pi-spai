@@ -10,16 +10,19 @@ export function registerTools(pi: ExtensionAPI): void {
     name: "record_spai_item",
     label: "Record SPAI Item",
     description:
-      "Zaznamenat úkol (. ), nápad (? ) nebo poznámku (- ) v docs/spai/ s plnou podporou SPAI syntaxe.",
+      "Zaznamenat úkol (. ), nápad (? ) nebo poznámku (- ) v docs/spai/ s plnou podporou SPAI syntaxe. Skladba řádku: '<prefix> <text> @<projekt> !<priorita> :tag1:tag2:'. Tagy jsou vždy whitespace-oddělený blok dvojtečkových tagů (:bl: :email: :okruhy: nebo :bl:email:okruhy:), priorita je pouze ! / !high, !medium, !low.",
     promptSnippet:
       "Zaznamenat projektový úkol, nápad nebo poznámku do docs/spai/",
     promptGuidelines: [
       "Use record_spai_item when the user wants to record a task (. ), idea (? ), or note (- ) in the project backlog.",
+      "Always include the current project as an inline @<project> token (folder name of the project root, e.g. @pi-spai; quoted @\"my project\" when it has spaces) and pass the same value in the project argument. This routes storage into that project's docs/spai/.",
+      "Write tags only as whitespace-delimited colon blocks: ':tag1:tag2:' or ':tag1: :tag2:'. Lowercase ASCII, allowed chars a-z 0-9 _ . / -. Never '#tag', 'tag:', or 'tags: a, b'.",
+      "Priority tokens are exactly '!', '!high', '!medium', '!low' (bare '!' means high) as standalone whitespace-delimited tokens.",
     ],
     parameters: Type.Object({
       text: Type.String({
         description:
-          "Text položky včetně volitelného SPAI prefixu (. úkol, ? nápad, - poznámka, x hotovo, ! priorita, @termín, :tag:)",
+          "Text položky ve SPAI syntaxi: '<prefix> <text> @<projekt> !<priorita> @<termín> :tag1:tag2:'. Prefix (. úkol, / pracuje se, /. čeká, x hotovo, z zrušeno, ? nápad, - poznámka) musí být první token následovaný mezerou. Tagy: whitespace-oddělený blok dvojtečkových tagů, např. ':bl: :email: :okruhy:' nebo ':bl:email:okruhy:'. Priorita: ! (high), !high, !medium, !low. Projekt: @nazev-projektu nebo @\"nazev s mezerou\". Termín: @2026-09-01 nebo @15.09.",
       }),
       project: Type.Optional(
         Type.String({

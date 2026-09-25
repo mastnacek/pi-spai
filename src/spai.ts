@@ -114,8 +114,11 @@ export function extractInlineTags(text: string): {
   cleanText: string;
 } {
   const tags: string[] = [];
+  // Trailing boundary is a lookahead, not a consumed whitespace: consuming it
+  // would swallow the separator in front of the next `:tag:` block and drop
+  // every second tag in `:bl: :email: :okruhy:`.
   const tagBlockRe =
-    /(?:^|\s):([A-Za-z0-9_./-]+(?::[A-Za-z0-9_./-]+)*):(?:\s|$)/g;
+    /(?:^|\s):([A-Za-z0-9_./-]+(?::[A-Za-z0-9_./-]+)*):(?=\s|$)/g;
 
   let match: RegExpExecArray | null;
   const cleanText = text.replace(tagBlockRe, (fullMatch, tagGroup) => {

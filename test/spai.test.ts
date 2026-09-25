@@ -59,6 +59,20 @@ test("extractInlineTags parses chained tags", () => {
   assert.equal(cleanText, "Oprava IPC");
 });
 
+test("extractInlineTags parses whitespace-separated tag blocks without dropping any", () => {
+  const { tags, cleanText } = extractInlineTags(
+    "Posílat jen těm, kdož mají okruh :bl: :email: :okruhy:",
+  );
+  assert.deepEqual(tags, ["bl", "email", "okruhy"]);
+  assert.equal(cleanText, "Posílat jen těm, kdož mají okruh");
+});
+
+test("extractInlineTags ignores glued, hashtag and unterminated tag syntax", () => {
+  assert.deepEqual(extractInlineTags("slovo:bug:").tags, []);
+  assert.deepEqual(extractInlineTags("text #bug").tags, []);
+  assert.deepEqual(extractInlineTags("text bug:").tags, []);
+});
+
 test("extractPriority parses ! prefix", () => {
   const res = extractPriority("! . Důležitý úkol");
   assert.equal(res.priority, "high");
