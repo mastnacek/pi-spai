@@ -5,3 +5,6 @@ dist/
 .pi/
 .env
 .env.*
+
+# Written by the decision-gate plugin, not by this repo
+/docs/adr/

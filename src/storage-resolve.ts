@@ -1,11 +1,11 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
-  discoverAllProjects,
   getSpaiDirForProject,
   normalizePath,
   resolveProjectFromIdentifier,
   scanWorkspaceSubprojects,
+  type ProjectSummary,
 } from "./projects.js";
 import { getSpaiDir, loadIndex } from "./storage-fs.js";
 import { scanProjectSpai } from "./storage-multiproject.js";
@@ -91,15 +91,39 @@ interface CandidateProject {
 }
 
 /**
- * Projects whose SPAI backlog should be searched for a bare id. Uses the same
- * discovery as the Kanban (`discoverAllProjects`) plus the cwd's ancestors and
- * their subprojects, because the SPAI-003 collision was a subproject reaching
- * the repo ROOT's docs/spai — an ancestor, not a child, of the cwd.
+ * The nearest ancestor that owns a VCS checkout: the cwd itself when it is a
+ * root, otherwise the first directory upward that contains a `.git` entry.
  *
- * ponytail: no cross-call cache; discovery re-runs per lookup. Bounded by the
- * repo boundary (stops at the nearest `.git`) so it never escapes the checkout.
+ * Every id lookup is bounded by this. The SPAI-003 collision was a subproject
+ * reaching its repo ROOT's `docs/spai` — an ancestor, not a child — so the walk
+ * has to go up, but never past the worktree. A bare `SPAI-013` is a question
+ * about the repository you are in, not about every project on the drive.
+ */
+export function findWorktreeRoot(cwd: string): string {
+  let dir = resolve(cwd);
+  for (let i = 0; i < 64; i++) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return resolve(cwd);
+    dir = parent;
+  }
+  return resolve(cwd);
+}
+
+/**
+ * Projects whose SPAI backlog should be searched for a bare id, all inside the
+ * current worktree: the cwd and its ancestors up to that root, the root's
+ * subprojects, and the cwd's own subprojects (`scanWorkspaceSubprojects` reads
+ * the filesystem only).
+ *
+ * ponytail: no cross-call cache; discovery re-runs per lookup. `discoverAllProjects`
+ * is deliberately NOT used here: it merges the global pi-projects cache and the
+ * manual project config, so on this machine one lookup scanned ~200 projects
+ * across D:\ and still missed the two that mattered. The worktree root is the
+ * boundary that keeps an id lookup both correct and cheap.
  */
 function discoverCandidateProjects(cwd: string): CandidateProject[] {
+  const root = findWorktreeRoot(cwd);
   const map = new Map<string, CandidateProject>();
   const add = (path: string, name: string, spaiDir: string) => {
     const normDir = normalizePath(spaiDir);
@@ -107,26 +131,66 @@ function discoverCandidateProjects(cwd: string): CandidateProject[] {
     map.set(normDir, { name, path: normalizePath(path), spaiDir: normDir });
   };
 
-  for (const p of discoverAllProjects(cwd)) {
-    const spaiDir = p.spaiDir || getSpaiDirForProject(p.path);
-    if (existsSync(spaiDir)) add(p.path, p.name, spaiDir);
-  }
-
   let dir = resolve(cwd);
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 64; i++) {
+    const spaiDir = getSpaiDirForProject(dir);
+    if (existsSync(spaiDir)) add(dir, basename(dir), spaiDir);
+    if (dir === root) break;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
-    const spaiDir = getSpaiDirForProject(dir);
-    if (existsSync(spaiDir)) add(dir, basename(dir), spaiDir);
-    for (const sub of scanWorkspaceSubprojects(dir)) {
+  }
+
+  for (const base of new Set([root, resolve(cwd)])) {
+    for (const sub of scanWorkspaceSubprojects(base)) {
       const subDir = sub.spaiDir || getSpaiDirForProject(sub.path);
       if (existsSync(subDir)) add(sub.path, sub.name, subDir);
     }
-    if (existsSync(join(dir, ".git"))) break;
+    // Sibling backlogs, found directly: a directory is a project for this lookup
+    // when it HAS a spai dir. `scanWorkspaceSubprojects` only reports directories
+    // carrying a code marker, so a plain sibling with a backlog would otherwise be
+    // invisible and its SPAI-013 would collide silently with the cwd's.
+    let children: string[] = [];
+    try {
+      children = readdirSync(base, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+        .map((e) => join(base, e.name));
+    } catch {
+      // An unreadable base contributes nothing; the lookup continues with what it has.
+    }
+    for (const child of children) {
+      const spaiDir = getSpaiDirForProject(child);
+      if (existsSync(spaiDir)) add(child, basename(child), spaiDir);
+    }
   }
 
   return [...map.values()];
+}
+
+/**
+ * Resolve a `@project` qualifier against the worktree-scoped candidate set, then
+ * against the global list as a fallback so an explicitly named project outside
+ * this worktree still works.
+ */
+function resolveScopedProject(
+  identifier: string,
+  cwd: string,
+  candidates: readonly CandidateProject[],
+): { name: string; path?: string } {
+  const wanted = identifier.replace(/^@"?|"?$/g, "").replace(/[/\\]+$/, "").toLowerCase();
+  const hit = candidates.find(
+    (c) => c.name.toLowerCase() === wanted || c.path.toLowerCase() === wanted,
+  );
+  if (hit) return { name: hit.name, path: hit.path };
+  const global = resolveProjectFromIdentifier(identifier, undefined, cwd);
+  if (global.path) return global;
+  const summaries: ProjectSummary[] = candidates.map((c) => ({
+    name: c.name,
+    path: c.path,
+    spaiDir: c.spaiDir,
+    hasSpai: true,
+  }));
+  return resolveProjectFromIdentifier(identifier, () => summaries, cwd);
 }
 
 /**
@@ -163,13 +227,15 @@ export async function resolveRecordTarget(
     }
   }
 
+  const candidates = discoverCandidateProjects(cwd);
+
   // 2. Project-qualified id: "SPAI-013 @project" or "SPAI-013 @\"my proj\"".
   const { bare, project } = splitProjectQualifier(raw);
   if (project) {
-    const resolved = resolveProjectFromIdentifier(project, undefined, cwd);
+    const resolved = resolveScopedProject(project, cwd, candidates);
     if (!resolved.path || !existsSync(resolved.path)) {
       throw new Error(
-        `Projekt "@${project}" nebyl nalezen pro rozlišení SPAI ID "${bare}".`,
+        `Projekt "@${project}" nebyl nalezen pro rozlišení SPAI ID "${bare}". Hledáno v pracovním stromu ${findWorktreeRoot(cwd)}.`,
       );
     }
     const dir = getSpaiDirForProject(resolved.path);
@@ -183,17 +249,17 @@ export async function resolveRecordTarget(
     return entry ? targetFromEntry(entry, resolved.path) : null;
   }
 
-  // 3. Bare id: search every discovered project, never pick a collision silently.
-  const candidates: SpaiIndexEntry[] = [];
-  for (const proj of discoverCandidateProjects(cwd)) {
+  // 3. Bare id: search every project in the worktree, never pick a collision silently.
+  const matches: SpaiIndexEntry[] = [];
+  for (const proj of candidates) {
     const entries = await scanProjectSpai({
       name: proj.name,
       path: proj.path,
       spaiDir: proj.spaiDir,
     });
-    candidates.push(...matchEntries(entries, raw));
+    matches.push(...matchEntries(entries, raw));
   }
-  if (candidates.length === 0) return null;
-  if (candidates.length > 1) throw new SpaiIdCollisionError(raw, candidates);
-  return targetFromEntry(candidates[0], cwd);
+  if (matches.length === 0) return null;
+  if (matches.length > 1) throw new SpaiIdCollisionError(raw, matches);
+  return targetFromEntry(matches[0], cwd);
 }

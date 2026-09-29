@@ -17,6 +17,7 @@ import {
   searchRecords,
   updateRecordStatus,
 } from "../src/storage.js";
+import { normalizePath } from "../src/projects.js";
 
 interface SeedRecord {
   id: string;
@@ -331,5 +332,86 @@ test("interleaved saveRecord and updateRecordStatus keep the index consistent", 
     assert.ok(index.records.some((r) => r.id !== first.id));
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// --- Worktree boundary (SPAI-003 follow-up) -------------------------------------------
+
+test("a bare id never reaches a project outside the current worktree", async () => {
+  // The drive on this machine holds ~200 configured projects with their own
+  // `SPAI-NNN` ids. A bare id is a question about the repository you are in.
+  const seq = ++fixtureSeq;
+  const root = await mkdtemp(join(tmpdir(), "pi-spai-boundary-"));
+  const outside = await mkdtemp(join(tmpdir(), "pi-spai-outside-"));
+  try {
+    await mkdir(join(root, ".git"));
+    const proj = join(root, `in-${seq}`);
+    await mkdir(proj);
+    await seedProject(proj, `in-${seq}`, [
+      { id: "SPAI-900", title: "In-tree", status: "todo" },
+    ]);
+    await seedProject(outside, `out-${seq}`, [
+      { id: "SPAI-900", title: "Out-of-tree", status: "done" },
+    ]);
+    // The out-of-tree project is in the global list, so an unscoped lookup would see it.
+    const outsideFile = join(outside, "docs", "spai", "SPAI-900.md");
+    // The in-tree one is the only candidate: no collision, and the right file changed.
+    await updateRecordStatus(proj, "SPAI-900", "working");
+    assert.ok(fileHasStatus(await readFile(join(proj, "docs", "spai", "SPAI-900.md"), "utf8"), "working"));
+    assert.ok(fileHasStatus(await readFile(outsideFile, "utf8"), "done"), "out-of-tree untouched");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("an ancestor backlog inside the worktree is still searched (the original SPAI-003 shape)", async () => {
+  const seq = ++fixtureSeq;
+  const root = await mkdtemp(join(tmpdir(), "pi-spai-ancestor-"));
+  try {
+    await mkdir(join(root, ".git"));
+    const sub = join(root, `sub-${seq}`);
+    await mkdir(join(sub, "pkg", "deep"), { recursive: true });
+    const deep = join(sub, "pkg", "deep");
+    await seedProject(root, `root-${seq}`, [
+      { id: "SPAI-777", title: "Root backlog", status: "done" },
+    ]);
+    await seedProject(deep, `deep-${seq}`, [
+      { id: "SPAI-777", title: "Deep backlog", status: "todo" },
+    ]);
+    await assert.rejects(
+      () => updateRecordStatus(deep, "SPAI-777", "working"),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /více projektů/);
+        return true;
+      },
+    );
+    assert.ok(fileHasStatus(await readFile(join(root, "docs", "spai", "SPAI-777.md"), "utf8"), "done"));
+    assert.ok(fileHasStatus(await readFile(join(deep, "docs", "spai", "SPAI-777.md"), "utf8"), "todo"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("findWorktreeRoot returns the nearest .git ancestor, or the cwd when there is none", async () => {
+  const { findWorktreeRoot } = await import("../src/storage-resolve.js");
+  const seq = ++fixtureSeq;
+  const root = await mkdtemp(join(tmpdir(), "pi-spai-root-"));
+  try {
+    await mkdir(join(root, ".git"));
+    const deep = join(root, "a", "b");
+    await mkdir(deep, { recursive: true });
+    assert.equal(normalizePath(findWorktreeRoot(deep)), normalizePath(root));
+    assert.equal(normalizePath(findWorktreeRoot(root)), normalizePath(root));
+    const bare = await mkdtemp(join(tmpdir(), "pi-spai-bare-"));
+    try {
+      // No .git anywhere above a temp dir on this machine within 64 levels: cwd is returned.
+      assert.equal(normalizePath(findWorktreeRoot(bare)), normalizePath(bare));
+    } finally {
+      await rm(bare, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
