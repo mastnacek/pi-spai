@@ -303,7 +303,7 @@ export class KanbanBoardComponent implements Component {
       const entry = getSelectedRecord(this.view());
       if (entry && this.onRealizeRecord && !this.isOpening) {
         this.isOpening = true;
-        void readRecord(entry.projectPath || this.cwd, entry.id)
+        void readRecord(entry.projectPath || this.cwd, entry.filePath || entry.file)
           .then((rec) => {
             this.isOpening = false;
             if (rec && this.onRealizeRecord) {
@@ -320,7 +320,7 @@ export class KanbanBoardComponent implements Component {
       const entry = getSelectedRecord(this.view());
       if (entry && this.onOpenRecord && !this.isOpening) {
         this.isOpening = true;
-        void readRecord(entry.projectPath || this.cwd, entry.id)
+        void readRecord(entry.projectPath || this.cwd, entry.filePath || entry.file)
           .then((rec) => {
             this.isOpening = false;
             if (rec && this.onOpenRecord) {

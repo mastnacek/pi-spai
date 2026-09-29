@@ -137,7 +137,7 @@ export async function handleToggle(
       ? explicitStatus
       : cycleNextStatus(record.status, record.type);
 
-  const updated = await updateRecordStatus(ctx.cwd, record.id, nextStatus);
+  const updated = await updateRecordStatus(ctx.cwd, record.filePath || record.id, nextStatus);
   invalidateCache();
   await updateStatusBar(ctx);
 

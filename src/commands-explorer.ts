@@ -89,7 +89,7 @@ export async function openDirectoryExplorer(
           const prioStr = r.priority === "high" ? " ⚡" : "";
           const deadStr = r.deadline ? ` ⏰ ${r.deadline}` : "";
           return {
-            value: r.id,
+            value: r.filePath || r.file,
             label: `${pinkGlow(r.id)} ${typeBadge} ${statusBadge} ${r.title}${prioStr}${deadStr}`,
             description: `${r.timestamp}${tagsStr}`,
           };

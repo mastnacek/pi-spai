@@ -76,7 +76,7 @@ export async function openReaderView(
       try {
         const updated = await updateRecordStatus(
           ctx.cwd,
-          currentRecord.id,
+          currentRecord.filePath || currentRecord.id,
           status,
         );
         if (updated) {

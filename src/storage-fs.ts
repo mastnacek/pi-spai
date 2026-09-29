@@ -55,6 +55,62 @@ export async function ensureSpaiDir(
   return dir;
 }
 
+/**
+ * Thrown when the per-directory lock is not acquired within the timeout.
+ * Named so callers/tests can distinguish a stuck writer from a real I/O error.
+ */
+export class SpaiLockTimeoutError extends Error {
+  constructor(dir: string) {
+    super(`Časový limit zámku SPAI (5 s) vypršel pro "${dir}".`);
+    this.name = "SpaiLockTimeoutError";
+  }
+}
+
+// ponytail: in-process, per-directory mutex only. Cross-process locking is out
+// of scope — a second pi process writing the same backlog is not serialized.
+const dirLocks = new Map<string, Promise<void>>();
+const LOCK_TIMEOUT_MS = 5000;
+
+/**
+ * Serializes a read-modify-write of one SPAI directory. `atomicWriteFile` only
+ * serializes the write of a single path, not the load->mutate->write sequence,
+ * so concurrent callers must pass through here to avoid lost index updates.
+ */
+export async function withDirLock<T>(
+  dir: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const key = resolve(dir);
+  const previous = dirLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const queued = previous.then(() => gate, () => gate);
+  dirLocks.set(key, queued);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      previous.catch(() => {}),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new SpaiLockTimeoutError(key)),
+          LOCK_TIMEOUT_MS,
+        );
+        timer.unref?.();
+      }),
+    ]);
+    return await fn();
+  } finally {
+    if (timer) clearTimeout(timer);
+    release();
+    if (dirLocks.get(key) === queued) {
+      dirLocks.delete(key);
+    }
+  }
+}
+
 let writeSeq = 0;
 const writeQueues = new Map<string, Promise<void>>();
 

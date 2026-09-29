@@ -1,10 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import {
-  loadAvailableProjects,
-  resolveProjectFromIdentifier,
-} from "./projects.js";
+import { resolveProjectFromIdentifier } from "./projects.js";
 import {
   parseInlineMeta,
   parseSpai,
@@ -28,6 +25,7 @@ import {
   loadIndex,
   PROJECT_ROOT_MARKERS,
   rebuildIndex,
+  withDirLock,
 } from "./storage-fs.js";
 import {
   loadAllProjectsIndex,
@@ -46,6 +44,8 @@ export {
   loadAllProjectsIndex, loadIndex, parseSpaiMarkdown, PROJECT_ROOT_MARKERS,
   rebuildIndex, scanProjectSpai, slugify,
 };
+export { SpaiIdCollisionError, resolveRecordTarget } from "./storage-resolve.js";
+import { resolveRecordTarget } from "./storage-resolve.js";
 
 export async function saveRecord(
   cwd: string,
@@ -76,65 +76,69 @@ export async function saveRecord(
   }
 
   const dir = await ensureSpaiDir(targetCwd, dirOverride);
-  const index = await loadIndex(targetCwd, dirOverride);
+  return withDirLock(dir, async () => {
+    // Re-read the index after acquiring the lock so the next id is correct even
+    // when another record was written while we were waiting.
+    const index = await loadIndex(targetCwd, dirOverride);
 
-  const id = getNextId(index.records);
-  const timestamp = formatDateTime();
-  const datePrefix = timestamp.split(" ")[0] || "2026-08-27";
-  const slug = slugify(parsed.title) || "polozka";
-  const fileName = `${datePrefix}-${id}-${slug}.md`;
-  const filePath = join(dir, fileName);
+    const id = getNextId(index.records);
+    const timestamp = formatDateTime();
+    const datePrefix = timestamp.split(" ")[0] || "2026-08-27";
+    const slug = slugify(parsed.title) || "polozka";
+    const fileName = `${datePrefix}-${id}-${slug}.md`;
+    const filePath = join(dir, fileName);
 
-  const record: SpaiRecord = {
-    id,
-    title: parsed.title,
-    type: parsed.type,
-    status: parsed.status,
-    symbol: parsed.symbol,
-    timestamp,
-    tags: inlineMeta.tags,
-    description: inlineMeta.cleanBody.slice(0, 120),
-    priority: inlineMeta.priority,
-    deadline: inlineMeta.deadline,
-    project: projectName || basename(targetCwd),
-    projectPath: targetCwd,
-    file: fileName,
-    filePath,
-    body: rawText,
-    subtasks,
-  };
+    const record: SpaiRecord = {
+      id,
+      title: parsed.title,
+      type: parsed.type,
+      status: parsed.status,
+      symbol: parsed.symbol,
+      timestamp,
+      tags: inlineMeta.tags,
+      description: inlineMeta.cleanBody.slice(0, 120),
+      priority: inlineMeta.priority,
+      deadline: inlineMeta.deadline,
+      project: projectName || basename(targetCwd),
+      projectPath: targetCwd,
+      file: fileName,
+      filePath,
+      body: rawText,
+      subtasks,
+    };
 
-  const markdown = formatSpaiMarkdown(record);
-  await atomicWriteFile(filePath, markdown);
+    const markdown = formatSpaiMarkdown(record);
+    await atomicWriteFile(filePath, markdown);
 
-  const indexEntry: SpaiIndexEntry = {
-    id: record.id,
-    title: record.title,
-    type: record.type,
-    status: record.status,
-    symbol: record.symbol,
-    timestamp: record.timestamp,
-    tags: record.tags,
-    priority: record.priority,
-    deadline: record.deadline,
-    project: record.project,
-    projectPath: record.projectPath,
-    file: record.file,
-  };
+    const indexEntry: SpaiIndexEntry = {
+      id: record.id,
+      title: record.title,
+      type: record.type,
+      status: record.status,
+      symbol: record.symbol,
+      timestamp: record.timestamp,
+      tags: record.tags,
+      priority: record.priority,
+      deadline: record.deadline,
+      project: record.project,
+      projectPath: record.projectPath,
+      file: record.file,
+    };
 
-  index.records = index.records.filter((r) => r.id !== id);
-  index.records.push(indexEntry);
-  index.records.sort((a, b) => {
-    const numA = parseInt(a.id.replace(/\D/g, ""), 10) || 0;
-    const numB = parseInt(b.id.replace(/\D/g, ""), 10) || 0;
-    return numA - numB;
+    index.records = index.records.filter((r) => r.id !== id);
+    index.records.push(indexEntry);
+    index.records.sort((a, b) => {
+      const numA = parseInt(a.id.replace(/\D/g, ""), 10) || 0;
+      const numB = parseInt(b.id.replace(/\D/g, ""), 10) || 0;
+      return numA - numB;
+    });
+    index.lastUpdated = formatDateTime();
+
+    const indexPath = getIndexPath(targetCwd, dirOverride);
+    await atomicWriteFile(indexPath, JSON.stringify(index, null, 2) + "\n");
+
+    return { ...record, rawContent: markdown };
   });
-  index.lastUpdated = formatDateTime();
-
-  const indexPath = getIndexPath(targetCwd, dirOverride);
-  await atomicWriteFile(indexPath, JSON.stringify(index, null, 2) + "\n");
-
-  return { ...record, rawContent: markdown };
 }
 
 export async function readRecord(
@@ -142,53 +146,18 @@ export async function readRecord(
   idOrFile: string,
   dirOverride?: string,
 ): Promise<SpaiRecord | null> {
-  const dir = getSpaiDir(cwd, dirOverride);
-  const index = await loadIndex(cwd, dirOverride);
+  const target = await resolveRecordTarget(cwd, idOrFile, dirOverride);
+  if (!target) return null;
 
-  const query = idOrFile.trim().toLowerCase();
-  let targetFile = idOrFile;
-
-  for (const entry of index.records) {
-    const entryIdLower = entry.id.toLowerCase();
-    const entryNum = entry.id.replace(/\D/g, "");
-    if (
-      entryIdLower === query ||
-      entryNum === query ||
-      entry.file.toLowerCase() === query ||
-      entry.file.toLowerCase().includes(query)
-    ) {
-      targetFile = entry.file;
-      break;
-    }
-  }
-
-  const filePath = join(dir, targetFile);
   try {
-    const content = await readFile(filePath, "utf8");
-    const parsed = parseSpaiMarkdown(content, basename(filePath));
+    const content = await readFile(target.filePath, "utf8");
+    const parsed = parseSpaiMarkdown(content, basename(target.filePath));
     if (parsed) {
-      parsed.filePath = filePath;
-      parsed.projectPath = cwd;
+      parsed.filePath = target.filePath;
+      parsed.projectPath = target.projectPath;
     }
     return parsed;
   } catch {
-    if (!dirOverride) {
-      try {
-        const projects = loadAvailableProjects(false, cwd);
-        for (const proj of projects) {
-          if (proj.path === cwd) continue;
-          const projSpaiDir = getSpaiDir(proj.path);
-          if (existsSync(projSpaiDir)) {
-            const candidate = await readRecord(proj.path, idOrFile, undefined);
-            if (candidate) {
-              return candidate;
-            }
-          }
-        }
-      } catch {
-        // Fallback search ignore
-      }
-    }
     return null;
   }
 }
@@ -199,42 +168,53 @@ export async function updateRecordStatus(
   nextStatus: SpaiStatus,
   dirOverride?: string,
 ): Promise<SpaiRecord | null> {
-  const record = await readRecord(cwd, id, dirOverride);
-  if (!record) return null;
+  const target = await resolveRecordTarget(cwd, id, dirOverride);
+  if (!target) return null;
 
-  record.status = nextStatus;
-  const { body: updatedBody, symbol } = updateBodyStatusPrefix(
-    record.body,
-    nextStatus,
-  );
-  record.body = updatedBody;
-  record.symbol = symbol;
+  return withDirLock(target.dir, async () => {
+    let content: string;
+    try {
+      content = await readFile(target.filePath, "utf8");
+    } catch {
+      return null;
+    }
+    const record = parseSpaiMarkdown(content, basename(target.filePath));
+    if (!record) return null;
+    record.filePath = target.filePath;
+    record.projectPath = target.projectPath;
 
-  if (
-    record.type === "Idea" &&
-    (nextStatus === "todo" || nextStatus === "working")
-  ) {
-    record.type = "Todo";
-  }
+    record.status = nextStatus;
+    const { body: updatedBody, symbol } = updateBodyStatusPrefix(
+      record.body,
+      nextStatus,
+    );
+    record.body = updatedBody;
+    record.symbol = symbol;
 
-  const updatedMarkdown = formatSpaiMarkdown(record);
-  const targetCwd = record.projectPath || cwd;
-  const dir = getSpaiDir(targetCwd, dirOverride);
-  const filePath = record.filePath || join(dir, record.file);
-  await atomicWriteFile(filePath, updatedMarkdown);
+    if (
+      record.type === "Idea" &&
+      (nextStatus === "todo" || nextStatus === "working")
+    ) {
+      record.type = "Todo";
+    }
 
-  const index = await loadIndex(targetCwd, dirOverride);
-  const entry = index.records.find((r) => r.id === record.id);
-  if (entry) {
-    entry.status = nextStatus;
-    entry.symbol = symbol;
-    entry.type = record.type;
-    index.lastUpdated = formatDateTime();
-    const indexPath = getIndexPath(targetCwd, dirOverride);
-    await atomicWriteFile(indexPath, JSON.stringify(index, null, 2) + "\n");
-  }
+    const updatedMarkdown = formatSpaiMarkdown(record);
+    await atomicWriteFile(target.filePath, updatedMarkdown);
 
-  return record;
+    // Re-read the index under the lock so a concurrent save cannot be lost.
+    const index = await loadIndex(target.projectPath, dirOverride);
+    const entry = index.records.find((r) => r.id === record.id);
+    if (entry) {
+      entry.status = nextStatus;
+      entry.symbol = symbol;
+      entry.type = record.type;
+      index.lastUpdated = formatDateTime();
+      const indexPath = getIndexPath(target.projectPath, dirOverride);
+      await atomicWriteFile(indexPath, JSON.stringify(index, null, 2) + "\n");
+    }
+
+    return record;
+  });
 }
 
 export async function searchRecords(
@@ -245,10 +225,15 @@ export async function searchRecords(
   projectFilter?: string,
 ): Promise<SearchMatch[]> {
   let targetCwd = cwd;
+  // When the project filter resolves to a directory, scoping by that directory
+  // already selects the project, so the fragile name comparison is dropped
+  // (it failed for path identifiers and for exact ids with a project filter).
+  let projectNameFilter = projectFilter;
   if (!dirOverride && projectFilter) {
     const resolved = resolveProjectFromIdentifier(projectFilter, undefined, cwd);
     if (resolved.path && existsSync(resolved.path)) {
       targetCwd = resolved.path;
+      projectNameFilter = undefined;
     }
   }
 
@@ -266,8 +251,8 @@ export async function searchRecords(
     }
 
     if (
-      projectFilter &&
-      entry.project?.toLowerCase() !== projectFilter.toLowerCase()
+      projectNameFilter &&
+      entry.project?.toLowerCase() !== projectNameFilter.toLowerCase()
     ) {
       continue;
     }
