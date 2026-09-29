@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-09-28 17:27:30",
+  "lastUpdated": "2026-09-29 06:49:13",
   "records": [
     {
       "id": "SPAI-001",
@@ -29,6 +29,22 @@
       "project": "pi-spai",
       "projectPath": "D:/01_programovani/pi/plugins/pi-spai",
       "file": "2026-09-28-SPAI-002-fix-record-spai-item-index-clobbering-on-concurren.md"
+    },
+    {
+      "id": "SPAI-003",
+      "title": "Fix update_spai_status updating the WRONG record when the id exists in several project backlogs: updateRecordStatus (src/storage.ts:196) resolves the id against the current cwd's docs/spai only (readRecord), then writes to record.projectPath. A bare id like \"SPAI-013\" was meant for pi-devs-psychologist (its own docs/spai/) but matched the monorepo root docs/spai/2026-09-25-SPAI-013-* and changed THAT item (done -> working). Reverted by hand with git checkout; the tool reported success. Fix: make the project part of the lookup, detect id collisions across discovered projects, and either refuse with the list of matches or require a project parameter. Reproduced 2026-09-28 while closing plan 0.4 SPAI items",
+      "type": "Todo",
+      "status": "todo",
+      "symbol": ".",
+      "timestamp": "2026-09-29 06:49:13",
+      "tags": [
+        "bug",
+        "id-collision"
+      ],
+      "priority": "high",
+      "project": "pi-spai",
+      "projectPath": "D:/01_programovani/pi/plugins/pi-spai",
+      "file": "2026-09-29-SPAI-003-fix-update-spai-status-updating-the-wrong-record-w.md"
     }
   ]
 }
