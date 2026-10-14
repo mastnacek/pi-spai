@@ -7,8 +7,13 @@ source: pi-spai
 tags: [bug, id-collision]
 facets:
   priority: high
+  deadline: 2026-09-29T06:49:13
   project: pi-spai
   project_path: D:/01_programovani/pi/plugins/pi-spai
+  area: Tasks
+  effort: medium
+  urgency: high
+  who: Developer
 spai_symbol: 'x'
 ---
 

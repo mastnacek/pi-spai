@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-09-29 08:17:57",
+  "lastUpdated": "2026-10-14 12:37:36",
   "records": [
     {
       "id": "SPAI-001",
@@ -61,6 +61,74 @@
       "project": "pi-spai",
       "projectPath": "D:/01_programovani/pi/plugins/pi-spai",
       "file": "2026-09-29-SPAI-004-fix-the-docsspaiindexjson-going-stale-when-a-ledge.md"
+    },
+    {
+      "id": "SPAI-005",
+      "title": "record_spai_item response should include the absolute target path and the resolved project, not just the file name: an unresolved token silently writes into cwd and the model cannot detect the misplacement from the current response",
+      "type": "Todo",
+      "status": "todo",
+      "symbol": ".",
+      "timestamp": "2026-10-14 12:37:04",
+      "tags": [
+        "tool",
+        "trap",
+        "syntax"
+      ],
+      "priority": "high",
+      "project": "project",
+      "projectPath": "D:/01_programovani/pi/plugins/pi-spai",
+      "file": "2026-10-14-SPAI-005-record-spai-item-response-should-include-the-absol.md"
+    },
+    {
+      "id": "SPAI-006",
+      "title": "search_spai_items status parameter description omits 'cancelled' although update_spai_status accepts it, and the search schema does not list allowed values at all; align the description with the real SpaiStatus enum and consider a StringEnum",
+      "type": "Todo",
+      "status": "todo",
+      "symbol": ".",
+      "timestamp": "2026-10-14 12:37:04",
+      "tags": [
+        "tool",
+        "schema",
+        "docs"
+      ],
+      "priority": "low",
+      "project": "pi-spai",
+      "projectPath": "D:/01_programovani/pi/plugins/pi-spai",
+      "file": "2026-10-14-SPAI-006-search-spai-items-status-parameter-description-omi.md"
+    },
+    {
+      "id": "SPAI-007",
+      "title": "record_spai_item response should include the absolute target path and the resolved project, not just the file name: an unresolved @<project> token silently writes into cwd and the model cannot detect the misplacement from the current response",
+      "type": "Todo",
+      "status": "todo",
+      "symbol": ".",
+      "timestamp": "2026-10-14 12:37:36",
+      "tags": [
+        "tool",
+        "trap",
+        "syntax"
+      ],
+      "priority": "high",
+      "project": "pi-spai",
+      "projectPath": "D:/01_programovani/pi/plugins/pi-spai",
+      "file": "2026-10-14-SPAI-007-record-spai-item-response-should-include-the-absol.md"
+    },
+    {
+      "id": "SPAI-008",
+      "title": "search_spai_items status parameter description omits 'cancelled' although update_spai_status accepts it, and the search schema does not list allowed values at all; align the description with the real SpaiStatus enum and consider a StringEnum",
+      "type": "Todo",
+      "status": "todo",
+      "symbol": ".",
+      "timestamp": "2026-10-14 12:37:36",
+      "tags": [
+        "tool",
+        "schema",
+        "docs"
+      ],
+      "priority": "low",
+      "project": "pi-spai",
+      "projectPath": "D:/01_programovani/pi/plugins/pi-spai",
+      "file": "2026-10-14-SPAI-008-search-spai-items-status-parameter-description-omi.md"
     }
   ]
 }

@@ -7,6 +7,10 @@ source: pi-spai
 facets:
   project: pi-spai
   project_path: D:/01_programovani/pi/plugins/pi-spai
+  area: Tasks
+  effort: medium
+  urgency: medium
+  who: Agent
 spai_symbol: '.'
 ---
 

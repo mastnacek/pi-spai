@@ -9,6 +9,10 @@ facets:
   priority: high
   project: pi-spai
   project_path: D:/01_programovani/pi/plugins/pi-spai
+  area: Docs
+  effort: medium
+  urgency: high
+  who: Agent
 spai_symbol: '.'
 ---
 

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- docs(skill): rewrite `spai-tasks` against the parser instead of prose. Adds the
+  previously undocumented behaviour that mattered in practice: project tokens are
+  a *label* rather than a destination when they do not resolve to an existing
+  path, and the tool response prints only the file name — so the skill now
+  documents the resolution order, the absolute-path override, and a verification
+  recipe. Also documents deadlines (`@15.09.` and friends), subtask lines,
+  project-qualified ids (`SPAI-013 @pi-uma`), the `# ` inbox capture, the
+  `/. `-before-`/ ` precedence, and the never-hand-edit rule (SPAI-004).
+  Split into `references/syntax.md` (exact regex contract) and
+  `references/projects.md` (resolution internals).
+
 - fix: a bare SPAI id is now resolved across discovered projects; an id present in
   several backlogs throws an error listing every candidate instead of silently
   updating the wrong record (SPAI-003).
