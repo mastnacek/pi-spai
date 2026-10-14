@@ -50,6 +50,51 @@ export function getNextId(records: Array<{ id: string }>): string {
 }
 
 /**
+ * SPAI ids visible in a directory listing (SPAI-009).
+ *
+ * The index only knows files it has seen, so an item that appeared outside the
+ * tools — hand-copied, restored from a backup, or checked out on a machine whose
+ * index predates it — is invisible to `getNextId`, which then reuses its id. A
+ * stale index therefore produced duplicate ids, not merely stale counts.
+ */
+export function idsFromFileNames(fileNames: string[]): string[] {
+  const ids: string[] = [];
+  for (const name of fileNames) {
+    const match = name.match(/SPAI-(\d+)/i);
+    if (!match) continue;
+    const id = `SPAI-${match[1]}`;
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * The text returned by `record_spai_item` (SPAI-007).
+ *
+ * Names the **absolute path** rather than only the file name: an unresolved
+ * project token leaves the record in the cwd backlog while keeping the token as
+ * a label, and the file name alone made that misplacement invisible to the model
+ * that wrote it. When the label and the actual directory disagree, the response
+ * says so instead of letting the divergence be discovered later.
+ */
+export function formatRecordCreated(record: SpaiRecord): string {
+  const lines = [
+    `Vytvořena SPAI položka ${record.id} (${record.file}):`,
+    `Typ: ${record.type}, Stav: ${record.status}, Projekt: ${record.project || "none"}, Titulek: ${record.title}`,
+    `Cesta: ${record.filePath}`,
+  ];
+
+  const projectPath = record.projectPath ?? "";
+  const leaf = projectPath.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+  if (projectPath && record.project && leaf && leaf !== record.project) {
+    lines.push(
+      `! Pozor: projekt "${record.project}" nebyl rozpoznán jako existující složka — záznam zůstal v ${record.projectPath}. Pro jistotu použij v @tokenu absolutní cestu.`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
  * Builds frontmatter markdown content for a SPAI record.
  */
 export function formatSpaiMarkdown(record: SpaiRecord): string {

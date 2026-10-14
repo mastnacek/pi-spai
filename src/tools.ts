@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { invalidateCache, updateStatusBar } from "./session-state.js";
+import { formatRecordCreated } from "./storage-format.js";
 import { saveRecord, searchRecords, updateRecordStatus } from "./storage.js";
 import type { SpaiStatus } from "./types.js";
 
@@ -46,7 +47,7 @@ export function registerTools(pi: ExtensionAPI): void {
         content: [
           {
             type: "text" as const,
-            text: `Vytvořena SPAI položka ${saved.id} (${saved.file}):\nTyp: ${saved.type}, Stav: ${saved.status}, Projekt: ${saved.project || "none"}, Titulek: ${saved.title}`,
+            text: formatRecordCreated(saved),
           },
         ],
         details: { record: saved },
@@ -66,10 +67,21 @@ export function registerTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       query: Type.String({ description: "Hledaný text, tag nebo ID" }),
       status: Type.Optional(
-        Type.String({
-          description:
-            "Volitelný filtr stavu ('todo', 'working', 'waiting', 'done', 'idea', 'note')",
-        }),
+        StringEnum(
+          [
+            "todo",
+            "working",
+            "waiting",
+            "done",
+            "cancelled",
+            "idea",
+            "note",
+          ] as const,
+          {
+            description:
+              "Volitelný filtr stavu (stejné hodnoty jako update_spai_status)",
+          },
+        ),
       ),
       project: Type.Optional(
         Type.String({

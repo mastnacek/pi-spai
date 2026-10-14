@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { resolveProjectFromIdentifier } from "./projects.js";
 import {
@@ -10,8 +10,10 @@ import {
 } from "./spai.js";
 import {
   formatDateTime,
+  formatRecordCreated,
   formatSpaiMarkdown,
   getNextId,
+  idsFromFileNames,
   parseSpaiMarkdown,
   slugify,
 } from "./storage-format.js";
@@ -47,8 +49,23 @@ export {
 export { SpaiIdCollisionError, resolveRecordTarget } from "./storage-resolve.js";
 import { resolveRecordTarget } from "./storage-resolve.js";
 
-export async function saveRecord(
-  cwd: string,
+/**
+ * Ids currently present in a backlog directory, read from file names.
+ *
+ * Unioned with the index when allocating the next id: the index is a cache, and
+ * an id that exists on disk but not in the cache must still be reserved
+ * (SPAI-009). An unreadable directory contributes nothing rather than failing
+ * the write.
+ */
+async function idsInDirectory(dir: string): Promise<string[]> {
+  try {
+    return idsFromFileNames(await readdir(dir));
+  } catch {
+    return [];
+  }
+}
+
+export async function saveRecord(  cwd: string,
   rawText: string,
   dirOverride?: string,
   projectHint?: string,
@@ -78,10 +95,16 @@ export async function saveRecord(
   const dir = await ensureSpaiDir(targetCwd, dirOverride);
   return withDirLock(dir, async () => {
     // Re-read the index after acquiring the lock so the next id is correct even
-    // when another record was written while we were waiting.
+    // when another record was written while we were waiting. The directory
+    // listing is unioned in as well: a file the index never saw must still
+    // advance the counter, or its id gets reused (SPAI-009).
     const index = await loadIndex(targetCwd, dirOverride);
+    const listingIds = await idsInDirectory(dir);
 
-    const id = getNextId(index.records);
+    const id = getNextId([
+      ...index.records,
+      ...listingIds.map((listingId) => ({ id: listingId })),
+    ]);
     const timestamp = formatDateTime();
     const datePrefix = timestamp.split(" ")[0] || "2026-08-27";
     const slug = slugify(parsed.title) || "polozka";
