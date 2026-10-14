@@ -5,6 +5,7 @@ import {
   readFile,
   readdir,
   rename,
+  stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -265,10 +266,51 @@ export async function loadIndex(
     const raw = await readFile(indexPath, "utf8");
     const parsed = JSON.parse(raw) as SpaiIndex;
     if (parsed && Array.isArray(parsed.records)) {
-      return parsed;
+      if (await indexDescribesDirectory(parsed, indexPath, cwd, dirOverride)) {
+        return parsed;
+      }
     }
   } catch {
-    // Rebuild
+    // Missing or unreadable index: rebuild below.
   }
   return rebuildIndex(cwd, dirOverride);
+}
+
+/**
+ * Whether the cached index still describes the directory (SPAI-004).
+ *
+ * Only the tools write the index, so a hand-edited ledger file, a `git pull`, or
+ * a file that appeared or vanished leaves it wrong — and everything reading the
+ * index (search, kanban, counts) then disagrees with the ledger, showing a
+ * finished item as todo indefinitely. Any name-set mismatch, or any file newer
+ * than the index, rebuilds it. The check is O(files) stats on a directory of
+ * tens-to-hundreds of small files: cheaper than being silently wrong.
+ */
+async function indexDescribesDirectory(
+  index: SpaiIndex,
+  indexPath: string,
+  cwd: string,
+  dirOverride?: string,
+): Promise<boolean> {
+  const dir = getSpaiDir(cwd, dirOverride);
+  let names: string[];
+  try {
+    names = (await readdir(dir)).filter((name) => name.endsWith(".md"));
+  } catch {
+    return false;
+  }
+
+  const known = new Set(index.records.map((record) => record.file));
+  if (names.length !== known.size) return false;
+  if (names.some((name) => !known.has(name))) return false;
+
+  try {
+    const indexMtime = (await stat(indexPath)).mtimeMs;
+    for (const name of names) {
+      if ((await stat(join(dir, name))).mtimeMs > indexMtime) return false;
+    }
+  } catch {
+    return false;
+  }
+  return true;
 }
