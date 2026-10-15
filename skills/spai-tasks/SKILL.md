@@ -1,6 +1,6 @@
 ---
 name: spai-tasks
-description: Compose SPAI syntax and manage SPAI task/idea/note lifecycle (todo -> working -> done) in project docs/spai/ backlogs. Use whenever you capture, write, search, or change the status of an SPAI item — including deadlines (@2026-09-15), subtasks (extra prefixed lines), inline @project, !priority, and :tag1:tag2: metadata, or when you must verify which project's backlog an item landed in.
+description: "Compose SPAI syntax and manage SPAI task/idea/note lifecycle (todo -> working -> done) in project docs/spai/ backlogs. Use whenever you capture, write, search, or change the status of an SPAI item — including deadlines (@2026-09-15), subtasks (extra prefixed lines), inline @project, !priority, and :tag1:tag2: metadata, or when you must verify which project's backlog an item landed in."
 ---
 
 # SPAI Task & Project Lifecycle
