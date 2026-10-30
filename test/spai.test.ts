@@ -12,7 +12,6 @@ import {
   parseSpai,
   parseSubtasks,
   stripSpaiPrefix,
-  toggleSubtaskDone,
   updateBodyStatusPrefix,
 } from "../src/spai.js";
 
@@ -129,20 +128,33 @@ test("parseSpai extracts title, type, and status", () => {
   assert.equal(parsed.title, "Implementovat SPAI ledger");
 });
 
-test("parseSubtasks and toggleSubtaskDone handle nested tasks", () => {
-  const body = `
-Hlavní úkol:
-. Krok 1
-x Krok 2
-/. Krok 3
+test("parseSubtasks reads only the ## Plán checklist", () => {
+  const body = `. [ZOP-342] Hlavní úkol @proj
+
+Přeposlaná pošta z Notes:
+x tohle není krok
+- [ ] ani tohle
+
+## Plán
+- [ ] Krok 1
+- [x] Krok 2
+  - [X] Krok 3
+. starý prefix se nepočítá
+
+## Návrh řešení
+- [ ] mimo plán
 `;
   const subtasks = parseSubtasks(body);
-  assert.equal(subtasks.length, 3);
-  assert.equal(subtasks[0]?.done, false);
-  assert.equal(subtasks[1]?.done, true);
-
-  const toggled = toggleSubtaskDone(body, 2);
-  assert.ok(toggled.includes("x Krok 1"));
+  assert.deepEqual(
+    subtasks.map((s) => [s.text, s.done]),
+    [
+      ["Krok 1", false],
+      ["Krok 2", true],
+      ["Krok 3", true],
+    ],
+  );
+  assert.equal(parseSubtasks("## Kroky\n- [ ] a").length, 1);
+  assert.equal(parseSubtasks("## Planeta\n- [ ] a").length, 0);
 });
 
 test("cycleNextStatus cycles through all states in order", () => {

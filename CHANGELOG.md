@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- feat: step plans and Notes-database tasks. Steps are a `- [ ]` / `- [x]`
+  checklist under `## Plán` (also `## Plan`, `## Kroky`); nothing outside that
+  section counts, so forwarded Notes mail no longer turns into phantom subtasks.
+  The index stores `steps` and `databasePath` (index version 2, older indexes
+  rebuild themselves); `/spai list` and the board show a `[done/total]` badge.
+  On session start, pi run inside a task's `database_path` lists that
+  database's open tasks oldest first, and the worktree root gets one summary.
+  Skill: hand-editing the body is allowed now that the index heals itself;
+  new §11 on solving a Notes-database task (verify before you blame, a
+  certainty field, and steps ordered by dependency, then complexity).
 - docs(skill): rewrite `spai-tasks` against the parser instead of prose. Adds the
   previously undocumented behaviour that mattered in practice: project tokens are
   a *label* rather than a destination when they do not resolve to an existing

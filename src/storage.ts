@@ -27,6 +27,7 @@ import {
   loadIndex,
   PROJECT_ROOT_MARKERS,
   rebuildIndex,
+  stepsOf,
   withDirLock,
 } from "./storage-fs.js";
 import {
@@ -146,6 +147,8 @@ export async function saveRecord(  cwd: string,
       project: record.project,
       projectPath: record.projectPath,
       file: record.file,
+      databasePath: record.databasePath,
+      steps: stepsOf(record.subtasks),
     };
 
     index.records = index.records.filter((r) => r.id !== id);

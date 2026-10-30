@@ -88,9 +88,10 @@ export async function openDirectoryExplorer(
           const tagsStr = r.tags.length > 0 ? ` :${r.tags.join(":")}:` : "";
           const prioStr = r.priority === "high" ? " ⚡" : "";
           const deadStr = r.deadline ? ` ⏰ ${r.deadline}` : "";
+          const stepsStr = r.steps ? ` [${r.steps.done}/${r.steps.total}]` : "";
           return {
             value: r.filePath || r.file,
-            label: `${pinkGlow(r.id)} ${typeBadge} ${statusBadge} ${r.title}${prioStr}${deadStr}`,
+            label: `${pinkGlow(r.id)} ${typeBadge} ${statusBadge}${stepsStr} ${r.title}${prioStr}${deadStr}`,
             description: `${r.timestamp}${tagsStr}`,
           };
         });

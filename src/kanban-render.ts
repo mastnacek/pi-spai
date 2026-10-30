@@ -164,7 +164,8 @@ export function renderWide(view: KanbanView, width: number) : string[] {
         const prioMark = task.priority === "high" ? "⚡" : "";
         const id = task.id.replace(/^SPAI-0*/i, "#");
         const availWidth = Math.max(8, w - 3);
-        const rawContent = `${id} ${task.title}${prioMark ? " " + prioMark : ""}`;
+        const steps = task.steps ? ` [${task.steps.done}/${task.steps.total}]` : "";
+        const rawContent = `${id}${steps} ${task.title}${prioMark ? " " + prioMark : ""}`;
         const truncatedContent = truncateToWidth(rawContent, availWidth, "…");
 
         let cellText: string;

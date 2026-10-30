@@ -307,29 +307,37 @@ export function parseSpai(
   };
 }
 
+/** `## Plán` / `## Plan` / `## Kroky` opens the plan section; the next `## ` ends it. */
+const PLAN_HEADING = /^##\s+(pl[aá]n|kroky)(\s|$)/i;
+const CHECKBOX = /^[-*]\s+\[([ xX])\]\s+(.*)$/;
+
 /**
- * Parses subtasks inside text.
+ * Parses the step checklist (`- [ ]` / `- [x]`) of the `## Plán` section.
+ *
+ * Only that section counts: Notes-exported tasks carry forwarded mail in their
+ * body, and any line there may look like a prefix or a checkbox.
  */
 export function parseSubtasks(text: string): Subtask[] {
   const lines = text.split("\n");
   const subtasks: Subtask[] = [];
+  let inPlan = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const prefix = matchSpaiPrefix(line.trimStart());
-    if (
-      prefix &&
-      (prefix.type === "Todo" ||
-        prefix.status === "done" ||
-        prefix.status === "working")
-    ) {
-      subtasks.push({
-        lineIndex: i,
-        status: prefix.status,
-        done: prefix.status === "done",
-        text: line.trimStart().slice(prefix.prefix.length).trim(),
-      });
+    const line = (lines[i] ?? "").trim();
+    if (line.startsWith("## ")) {
+      inPlan = PLAN_HEADING.test(line);
+      continue;
     }
+    if (!inPlan) continue;
+    const m = CHECKBOX.exec(line);
+    if (!m) continue;
+    const done = m[1] !== " ";
+    subtasks.push({
+      lineIndex: i,
+      status: done ? "done" : "todo",
+      done,
+      text: (m[2] ?? "").trim(),
+    });
   }
 
   return subtasks;

@@ -60,6 +60,8 @@ export interface SpaiRecord {
  file: string;
  body: string;
  subtasks: Subtask[];
+ /** ODP folder of the Notes database the task is about (frontmatter `database_path`). */
+ databasePath?: string;
  rawContent?: string;
 }
 
@@ -77,6 +79,9 @@ export interface SpaiIndexEntry {
  projectPath?: string;
  filePath?: string;
  file: string;
+ databasePath?: string;
+ /** Progress of the `## Plán` checklist; absent when the item has no plan. */
+ steps?: { done: number; total: number };
 }
 
 export interface SpaiIndex {

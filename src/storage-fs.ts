@@ -11,11 +11,13 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { formatDateTime, parseSpaiMarkdown } from "./storage-format.js";
-import type { SpaiIndex, SpaiIndexEntry } from "./types.js";
+import type { SpaiIndex, SpaiIndexEntry, Subtask } from "./types.js";
 
 export const DEFAULT_SPAI_DIR = join("docs", "spai");
 export const CANDIDATE_SPAI_DIRS = [join("docs", "spai"), join(".pi", "spai")];
 const INDEX_FILENAME = ".index.json";
+/** Bump when index entries gain fields, so older indexes get rebuilt (2: databasePath, steps). */
+export const INDEX_VERSION = 2;
 
 export const PROJECT_ROOT_MARKERS = [
   ".git",
@@ -200,6 +202,17 @@ export async function atomicWriteFile(
   }
 }
 
+/** Plan progress for the index; undefined when the item has no `## Plán`. */
+export function stepsOf(
+  subtasks: Subtask[],
+): SpaiIndexEntry["steps"] | undefined {
+  if (subtasks.length === 0) return undefined;
+  return {
+    done: subtasks.filter((s) => s.done).length,
+    total: subtasks.length,
+  };
+}
+
 export async function rebuildIndex(
   cwd: string,
   dirOverride?: string,
@@ -229,6 +242,8 @@ export async function rebuildIndex(
               project: parsed.project,
               projectPath: parsed.projectPath,
               file,
+              databasePath: parsed.databasePath,
+              steps: stepsOf(parsed.subtasks),
             });
           }
         } catch {
@@ -247,7 +262,7 @@ export async function rebuildIndex(
   });
 
   const index: SpaiIndex = {
-    version: 1,
+    version: INDEX_VERSION,
     lastUpdated: formatDateTime(),
     records: entries,
   };
@@ -299,6 +314,8 @@ async function indexDescribesDirectory(
   } catch {
     return false;
   }
+
+  if ((index.version ?? 0) < INDEX_VERSION) return false;
 
   const known = new Set(index.records.map((record) => record.file));
   if (names.length !== known.size) return false;

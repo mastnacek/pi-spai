@@ -109,12 +109,15 @@ before `/ `:
 
 ## Subtask detection
 
-A line is a subtask when, after `trimStart`, it matches a prefix whose
-`type === "Todo"` (or whose status is `done`/`working`). In practice: `. `, `/ `,
-`/. `, `x `, `X `, `z `, `Z `. Lines starting with `? `, `- ` or `# ` are not
-subtasks. Each subtask records its `lineIndex`, its own status and its text with
-the prefix stripped. Subtasks live inside the item body — they are not indexed as
-separate items and have no ids.
+Subtasks are the markdown checklist of the item's plan section: a `## Plán`,
+`## Plan` or `## Kroky` heading (case-insensitive) opens it, the next `## `
+heading ends it. Inside it, `- [ ] text` is open and `- [x] text` / `- [X] text`
+is done (`*` works as the bullet too, indentation is allowed). Nothing outside
+that section counts — Notes-exported items carry forwarded mail whose lines may
+look like prefixes or checkboxes. Each subtask records its `lineIndex`, `done`
+and its text. Subtasks have no ids; the index stores only their progress as
+`steps: { done, total }`, shown as a `[done/total]` badge in `/spai list` and
+the board.
 
 ## On-disk layout
 

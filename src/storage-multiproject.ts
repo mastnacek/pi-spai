@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getSpaiDirForProject, type ProjectSummary } from "./projects.js";
+import { INDEX_VERSION, stepsOf } from "./storage-fs.js";
 import { formatDateTime, parseSpaiMarkdown } from "./storage-format.js";
 import type { SpaiIndex, SpaiIndexEntry } from "./types.js";
 
@@ -39,6 +40,8 @@ export async function scanProjectSpai(
             projectPath: project.path,
             filePath,
             file,
+            databasePath: parsed.databasePath,
+            steps: stepsOf(parsed.subtasks),
           });
         }
       } catch {
@@ -94,7 +97,7 @@ export async function loadAllProjectsIndex(
   });
 
   const index: SpaiIndex = {
-    version: 1,
+    version: INDEX_VERSION,
     lastUpdated: formatDateTime(),
     records: allEntries,
   };

@@ -14,6 +14,7 @@ import {
   handleStatus,
   handleToggle,
 } from "./src/commands-handlers.js";
+import { buildDbReminder } from "./src/db-reminder.js";
 import { setProjectsConfigCwd } from "./src/projects-scanner.js";
 import { handleSessionStart } from "./src/session-state.js";
 import { registerTools } from "./src/tools.js";
@@ -33,6 +34,13 @@ export default function (pi: ExtensionAPI): void {
       // otherwise /spai would read roots the user changed for this project.
       setProjectsConfigCwd(ctx.cwd);
       handleSessionStart(ctx);
+      if (ctx.hasUI) {
+        buildDbReminder(ctx.cwd)
+          .then((msg) => msg && ctx.ui.notify(msg, "info"))
+          .catch(() => {
+            // Non-blocking
+          });
+      }
     }),
   );
 

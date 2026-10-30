@@ -176,6 +176,7 @@ export function parseSpaiMarkdown(
   let project: string | undefined = inlineMeta.project;
   let projectPath: string | undefined = inlineMeta.projectPath;
   const tags: string[] = [...inlineMeta.tags];
+  let databasePath: string | undefined;
 
   // Parse simple YAML keys if present
   if (yamlRaw) {
@@ -210,6 +211,9 @@ export function parseSpaiMarkdown(
 
     const projPathM = yamlRaw.match(/project_path:\s*(.+)$/m);
     if (projPathM) projectPath = projPathM[1].trim();
+
+    const dbPathM = yamlRaw.match(/database_path:\s*(.+)$/m);
+    if (dbPathM) databasePath = dbPathM[1].trim();
   }
 
   return {
@@ -229,5 +233,6 @@ export function parseSpaiMarkdown(
     filePath: "",
     body: cleanBody || title,
     subtasks,
+    databasePath,
   };
 }
