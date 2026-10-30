@@ -181,7 +181,7 @@ export class ReviewPicker {
       const mark = it.verdict ? greenGlow("✓") : " ";
       const title = it.entry.title.replace(/^\[[A-Z]+-\d+\]\s*/, "");
       const id = it.entry.id.replace(/^SPAI-/, "");
-      lines.push(fit(`${cur}${box}${mark}${id} ${(it.type ?? "?").padEnd(3)} ${title}`, width));
+      lines.push(fit(`${cur}${box} ${mark} ${id} ${(it.type ?? "?").padEnd(3)} ${title}`, width));
     }
     while (lines.length < rows) lines.push(" ".repeat(width));
     return lines;

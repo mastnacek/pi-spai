@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildReviewBrief, loadReviewItems, readVerdict, requestType } from "../src/review.js";
+import { buildReviewBrief, loadReviewItems, previewText, readVerdict, requestType } from "../src/review.js";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { ReviewPicker } from "../src/review-picker.js";
 
@@ -109,7 +109,7 @@ test("picker lays out side by side when wide, stacked when narrow", () => {
 
   for (let i = 0; i < 10; i++) picker.move(1); // past the 8 stacked list rows
   const plain = picker.render(69).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
-  assert.ok(plain.some((l) => l.includes("›[ ] 020")), "cursor scrolled into the 8 stacked rows");
+  assert.ok(plain.some((l) => l.includes("›[ ]   020")), "cursor scrolled into the 8 stacked rows");
 });
 
 test("reading mode shows a long task across the whole window and scrolls", () => {
@@ -158,4 +158,22 @@ test("reading mode shows a long task across the whole window and scrolls", () =>
   assert.equal(picker.selected.size, 1);
   picker.handleInput("\x1b"); // Esc back to the list, not closing
   assert.equal(picker.reading, false);
+});
+
+test("previewText leads a reviewed task with its proposal, then the request", () => {
+  const file = [
+    "---", "status: waiting", "---", "", "# SPAI-001: x", "",
+    ". [ZOP-1] x", "", "## Podrobnosti z Lotus Notes", "- meta",
+    "### Popis požadavku", "Zadání od uživatele", "",
+    "## Návrh řešení", "**Verdikt:** zastaralé", "", "## Plán", "- [ ] (S) krok",
+  ].join("\n");
+  const p = previewText(file);
+  assert.ok(p.startsWith("## Návrh řešení"));
+  assert.ok(p.indexOf("## Plán") < p.indexOf("## Zadání"));
+  assert.ok(p.indexOf("## Zadání") < p.indexOf("Zadání od uživatele"));
+  assert.doesNotMatch(p, /Podrobnosti|meta/);
+
+  const fresh = previewText(file.split("\n## Návrh řešení")[0] ?? "");
+  assert.ok(fresh.startsWith("### Popis požadavku"));
+  assert.doesNotMatch(fresh, /## Zadání/);
 });

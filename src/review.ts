@@ -27,15 +27,22 @@ export interface ReviewItem {
 
 /**
  * Text for the picker preview. Notes exports start with metadata the preview
- * header already shows, so it begins at `### Popis požadavku` when present;
- * otherwise the body without frontmatter and the `# SPAI-…` title.
+ * header already shows, so the request begins at `### Popis požadavku` when
+ * present; otherwise the body without frontmatter and the `# SPAI-…` title.
+ * A reviewed task leads with its proposal (verdict, cause, plan) — that is what
+ * the decision needs — and the request follows under `## Zadání`.
  */
 export function previewText(text: string): string {
   const body = text.replace(/\r/g, "").replace(/^---\n[\s\S]*?\n---\n/, "");
   const popis = body.indexOf("### Popis požadavku");
-  const from = popis >= 0 ? body.slice(popis) : body.replace(/^#\s+SPAI-\d+:.*\n/m, "");
+  const request = popis >= 0 ? body.slice(popis) : body.replace(/^#\s+SPAI-\d+:.*\n/m, "");
+  const proposalAt = request.indexOf("## Návrh řešení");
+  const ordered =
+    proposalAt >= 0
+      ? `${request.slice(proposalAt).trim()}\n\n## Zadání\n\n${request.slice(0, proposalAt).trim()}`
+      : request;
   // Notes rich text exports with runs of blank lines; one blank line is enough.
-  return from.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 6000);
+  return ordered.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 6000);
 }
 
 /** `**Verdikt:** zastaralé | …` -> "zastaralé"; "?" when reviewed without one. */

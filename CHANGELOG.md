@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- feat: in the `/spai review` picker a reviewed task's preview leads with
+  `## Návrh řešení` (verdict, cause, plan) and the request follows under
+  `## Zadání`; the review mark in the list is spaced (`[ ] ✓ 003`).
 - feat: `/spai review` preview renders the task as markdown with pi's own
   markdown theme (headings, bold, code, lists, links). → (or `l`) opens a
   reading mode with the whole window for one task: ↑↓ by line, space/PgDn by
