@@ -51,6 +51,7 @@ test("loadReviewItems orders IN, SP, ZN, ZOP, oldest first, with verdicts", asyn
     );
     assert.equal(items[0]?.verdict, "rychlovka");
     assert.equal(items[1]?.verdict, undefined);
+    assert.ok(items[1]?.preview.startsWith(". [IN-3] incident"), "preview drops frontmatter and title");
 
     let result: unknown = "pending";
     const picker = new ReviewPicker(items, (p) => (result = p));

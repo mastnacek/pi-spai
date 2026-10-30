@@ -79,3 +79,21 @@ test("index carries databasePath and steps", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("tasks waiting for the user are listed first, separately", async () => {
+  const { root, dbA } = await repo();
+  try {
+    const dir = join(root, "docs", "spai");
+    const fwd = (p: string) => p.replace(/\\/g, "/");
+    await writeFile(join(dir, "SPAI-005.md"), task("SPAI-005", fwd(dbA), "2021-01-01", "waiting"));
+    const msg = (await buildDbReminder(dbA)) ?? "";
+    assert.match(msg, /3 otevřené Notes úkoly k této databázi/);
+    assert.match(msg, /Čeká na tebe – návrh hotový \(1\):\n {2}SPAI-005/);
+    assert.ok(msg.indexOf("SPAI-005") < msg.indexOf("SPAI-002"));
+    assert.match(msg, /vyřeš SPAI-005/);
+    const atRoot = (await buildDbReminder(root)) ?? "";
+    assert.match(atRoot, /Čeká na tebe/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

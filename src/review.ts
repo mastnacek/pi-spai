@@ -21,6 +21,21 @@ export interface ReviewItem {
   type?: string;
   /** `**Verdikt:**` of an earlier review; undefined when not reviewed yet. */
   verdict?: string;
+  /** Task text for the picker preview: body without frontmatter and title. */
+  preview: string;
+}
+
+/**
+ * Text for the picker preview. Notes exports start with metadata the preview
+ * header already shows, so it begins at `### Popis požadavku` when present;
+ * otherwise the body without frontmatter and the `# SPAI-…` title.
+ */
+export function previewText(text: string): string {
+  const body = text.replace(/\r/g, "").replace(/^---\n[\s\S]*?\n---\n/, "");
+  const popis = body.indexOf("### Popis požadavku");
+  const from = popis >= 0 ? body.slice(popis) : body.replace(/^#\s+SPAI-\d+:.*\n/m, "");
+  // Notes rich text exports with runs of blank lines; one blank line is enough.
+  return from.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 6000);
 }
 
 /** `**Verdikt:** zastaralé | …` -> "zastaralé"; "?" when reviewed without one. */
@@ -51,7 +66,12 @@ export async function loadReviewItems(root: string): Promise<ReviewItem[]> {
     } catch {
       continue;
     }
-    items.push({ entry, type: requestType(entry.title), verdict: readVerdict(text) });
+    items.push({
+      entry,
+      type: requestType(entry.title),
+      verdict: readVerdict(text),
+      preview: previewText(text),
+    });
   }
   return items.sort(
     (a, b) =>
@@ -78,7 +98,8 @@ Pracuješ v \`${root}\`. Úkoly leží v \`docs/spai/\`, kód databází v \`dat
 ${list}
 
 ## Postup pro každý úkol, vždy jeden celý, pak další
-1. Postupuj přesně podle §11: přečti zadání, ověř, jestli problém ještě trvá
+1. Nastav úkolu stav \`working\` (\`update_spai_status\`).
+   Postupuj přesně podle §11: přečti zadání, ověř, jestli problém ještě trvá
    (nebyl už opraven? existuje formulář/pole/agent ještě?), dohledej v kódu
    příčinu s \`soubor:řádek\` a ověř ji v dokumentaci.
 2. Do souboru úkolu zapiš \`## Návrh řešení\` a \`## Plán\` podle šablony z §11,
@@ -89,8 +110,9 @@ ${list}
    - \`práce\` – skutečný rozbor a plán.
    Typ ZOP je odkladiště incidentů a požadavků, které nehořely – tam čekej
    hodně verdiktů \`zastaralé\`, ale vždy s důkazem.
-3. Zapiš soubor hned po dokončení úkolu, než přejdeš na další. Soubor je jediný
-   stav: přerušená revize se příště naváže od úkolů bez \`## Návrh řešení\`.
+3. Zapiš soubor hned po dokončení úkolu a nastav stav \`waiting\` (= čeká na
+   Jaroslava), teprve pak přejdi na další. \`done\` nikdy nenastavuj, Notes
+   úkoly uzavírá export z Notes sám.
 4. **Skript s řešením:** když oprava znamená konkrétní LotusScript, napiš ho
    jako \`.lss\` k vložení do Designeru do
    \`databaze/<db>/01_scripts/SPAI-NNN-<krátký-název>.lss\`. V hlavičce uveď
@@ -99,7 +121,6 @@ ${list}
    \`**Skripty:** [název](../../databaze/<db>/01_scripts/<soubor>.lss)\`.
    Změnu formule (hide-when, výchozí hodnota…) napiš rovnou do Návrhu jako blok kódu.
 5. Existující kód databází neměň, jen přidávej nové skripty do \`01_scripts/\`.
-   Stav úkolu neměň.
 
 ## Na konci
 V chatu vypiš tabulku: ID | typ | databáze | verdikt | první krok nebo co udělat v Notes.
@@ -119,6 +140,36 @@ function herdr(args: string[], cwd: string): Promise<string> {
   });
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Sends the prompt and makes sure the agent actually starts working. A freshly
+ * started pi reports ready while its extensions still load, so the Enter can
+ * get lost and the text just sits in the editor; then press Enter again.
+ */
+async function submitPrompt(name: string, text: string, cwd: string): Promise<void> {
+  try {
+    await herdr(
+      ["agent", "prompt", name, text, "--wait", "--until", "working", "--until", "blocked", "--timeout", "20000"],
+      cwd,
+    );
+    return;
+  } catch {
+    // agent_prompt_stalled / timeout: the text is in the editor, not submitted.
+  }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await sleep(1500);
+    await herdr(["agent", "send-keys", name, "enter"], cwd);
+    try {
+      await herdr(["agent", "wait", name, "--until", "working", "--until", "blocked", "--timeout", "8000"], cwd);
+      return;
+    } catch {
+      // still idle, try once more
+    }
+  }
+  throw new Error(`agent ${name} zadání nepotvrdil – stiskni v jeho panelu Enter`);
+}
+
 /**
  * Starts a pi agent in a new pane right of the current one (same herdr tab)
  * and hands it the brief. Returns the agent name.
@@ -135,10 +186,7 @@ export async function launchReviewAgent(root: string, briefPath: string): Promis
 
   const name = `spai-revize-${Date.now().toString(36)}`;
   await herdr(["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "120000"], root);
-  await herdr(
-    ["agent", "prompt", name, `Přečti zadání revize v souboru ${briefPath} a proveď ho celé.`],
-    root,
-  );
+  await submitPrompt(name, `Přečti zadání revize v souboru ${briefPath} a proveď ho celé.`, root);
   return name;
 }
 

@@ -352,8 +352,12 @@ to solve, analyse or plan such an item ("vyřeš SPAI-024"), do this:
      the cause. Never put the fix before it.
 6. **Do not change the database code while proposing.** The proposal is for the
    user to approve. Give LotusScript changes as `.lss` snippets ready to paste
-   into Designer. Leave the item's status alone. Notes items close themselves:
-   the Notes export agent marks them done when the request is resolved in Notes.
+   into Designer.
+   **Status:** `update_spai_status` → `working` when you start on the item,
+   → `waiting` once the proposal is written. `waiting` means *waiting for the
+   user*: to decide, carry out the plan, or close it in Notes. Never set `done`
+   on a Notes item. It closes itself: the Notes export agent marks it done and
+   appends `## Řešení z Notes` when the request is resolved in Notes.
    **Verdikt** sorts the item for triage: `zastaralé` = already fixed or no
    longer applies (give the evidence and the text to close it with in Notes);
    `rychlovka` = 1–3 `(S)` steps; `práce` = real analysis and a plan. ZOP items

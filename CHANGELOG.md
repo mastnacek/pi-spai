@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- fix: `update_spai_status` kept only its own frontmatter keys, so on a Notes
+  task it dropped `database_path`, `notes_unid` and the rest — the Notes
+  export recognises tasks by `notes_unid` and would have exported them again.
+  It now patches `status`, `type` and `spai_symbol` in the original
+  frontmatter.
+- feat: review status flow — the review agent sets `working` when it starts a
+  task and `waiting` (waiting for the user) once the proposal is written; pi
+  never sets a Notes task `done`. The session-start reminder lists waiting
+  tasks first. The `/spai review` picker previews the task text, and the
+  launched agent reliably receives the brief (Enter is resent while pi is
+  still loading).
 - feat: `/spai review` opens a picker of open Notes-database tasks (IN → SP →
   ZN → ZOP, oldest first, earlier verdicts shown). Ticked tasks go to a pi
   agent started in a new herdr pane (fallback: the brief goes to the editor),

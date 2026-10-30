@@ -11,6 +11,7 @@ import {
 import {
   formatDateTime,
   formatRecordCreated,
+  formatPreservingFrontmatter,
   formatSpaiMarkdown,
   getNextId,
   idsFromFileNames,
@@ -224,7 +225,7 @@ export async function updateRecordStatus(
       record.type = "Todo";
     }
 
-    const updatedMarkdown = formatSpaiMarkdown(record);
+    const updatedMarkdown = formatPreservingFrontmatter(content, record);
     await atomicWriteFile(target.filePath, updatedMarkdown);
 
     // Re-read the index under the lock so a concurrent save cannot be lost.

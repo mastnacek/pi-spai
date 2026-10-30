@@ -94,6 +94,36 @@ export function formatRecordCreated(record: SpaiRecord): string {
   return lines.join("\n");
 }
 
+const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n/;
+
+/**
+ * Re-serializes `record` but keeps the original file's frontmatter, changing
+ * only `status`, `type` and `spai_symbol` in it. formatSpaiMarkdown knows a
+ * fixed set of keys; files written by other tools (the Notes export carries
+ * `database_path`, `notes_unid`, …) would lose the rest — and the Notes
+ * export recognises its tasks by `notes_unid`, so it would export them again.
+ */
+export function formatPreservingFrontmatter(original: string, record: SpaiRecord): string {
+  const formatted = formatSpaiMarkdown(record);
+  const fm = FRONTMATTER.exec(original)?.[0];
+  if (!fm) return formatted;
+
+  const eol = fm.includes("\r\n") ? "\r\n" : "\n";
+  let patched = fm;
+  const set = (key: string, value: string) => {
+    const line = new RegExp(`^${key}:.*$`, "m");
+    patched = line.test(patched)
+      ? patched.replace(line, `${key}: ${value}`)
+      : patched.replace(new RegExp(`${eol}---${eol}$`), `${eol}${key}: ${value}${eol}---${eol}`);
+  };
+  set("status", record.status);
+  set("type", record.type);
+  if (record.symbol) set("spai_symbol", `'${record.symbol}'`);
+
+  const rest = formatted.slice((FRONTMATTER.exec(formatted)?.[0] ?? "").length);
+  return patched + rest;
+}
+
 /**
  * Builds frontmatter markdown content for a SPAI record.
  */

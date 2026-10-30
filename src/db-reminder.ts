@@ -31,9 +31,21 @@ function line(r: SpaiIndexEntry): string {
   return `  ${r.id}${dl}${steps} ${r.title}`;
 }
 
+/** Tasks waiting for the user (a review wrote the proposal), at most `n`. */
+function waitingBlock(list: SpaiIndexEntry[], n: number): string[] {
+  const waiting = list.filter((r) => r.status === "waiting");
+  if (waiting.length === 0) return [];
+  const more = waiting.length > n ? [`  … a dalších ${waiting.length - n}`] : [];
+  return [
+    `✋ Čeká na tebe – návrh hotový (${waiting.length}):`,
+    ...waiting.slice(0, n).map(line),
+    ...more,
+  ];
+}
+
 /**
- * One reminder line about open tasks that point at a database folder
- * (`database_path`), shown where you can act on them:
+ * Reminder about open tasks that point at a database folder (`database_path`),
+ * shown where you can act on them; tasks waiting for the user come first:
  * - cwd inside a database folder -> that database's tasks, oldest first;
  * - cwd at the worktree root     -> a summary across all databases.
  * Anywhere else it stays silent. Tasks live in the worktree root's backlog.
@@ -43,32 +55,36 @@ export async function buildDbReminder(cwd: string): Promise<string | null> {
   if (!existsSync(join(root, "docs", "spai"))) return null;
 
   const index = await loadIndex(root);
-  const open = index.records.filter(
-    (r) => r.databasePath && OPEN.has(r.status),
-  );
+  const open = index.records
+    .filter((r) => r.databasePath && OPEN.has(r.status))
+    .sort(byAge);
   if (open.length === 0) return null;
 
   const here = key(cwd);
   if (here === key(root)) {
     const dbs = new Set(open.map((r) => key(r.databasePath as string)));
-    const oldest = [...open].sort(byAge).slice(0, 3);
+    const rest = open.filter((r) => r.status !== "waiting");
     return [
-      `📌 ${tasks(open.length)} v ${dbs.size === 1 ? "1 databázi" : `${dbs.size} databázích`}. Nejstarší:`,
-      ...oldest.map(line),
+      `📌 ${tasks(open.length)} v ${dbs.size === 1 ? "1 databázi" : `${dbs.size} databázích`}.`,
+      ...waitingBlock(open, 5),
+      ...(rest.length > 0 ? ["Nejstarší:", ...rest.slice(0, 3).map(line)] : []),
     ].join("\n");
   }
 
-  const mine = open
-    .filter((r) => {
-      const db = key(r.databasePath as string);
-      return here === db || here.startsWith(`${db}/`);
-    })
-    .sort(byAge);
+  const mine = open.filter((r) => {
+    const db = key(r.databasePath as string);
+    return here === db || here.startsWith(`${db}/`);
+  });
   if (mine.length === 0) return null;
 
-  const more = mine.length > SHOWN ? `\n  … a dalších ${mine.length - SHOWN}` : "";
+  const rest = mine.filter((r) => r.status !== "waiting");
+  const more = rest.length > SHOWN ? [`  … a dalších ${rest.length - SHOWN}`] : [];
+  const next = mine.find((r) => r.status === "waiting") ?? rest[0];
   return [
     `📌 ${tasks(mine.length)} k této databázi:`,
-    ...mine.slice(0, SHOWN).map(line),
-  ].join("\n") + more + `\n  Řešení: napiš „vyřeš ${mine[0]?.id}“.`;
+    ...waitingBlock(mine, SHOWN),
+    ...rest.slice(0, SHOWN).map(line),
+    ...more,
+    `  Řešení: napiš „vyřeš ${next?.id}“.`,
+  ].join("\n");
 }
