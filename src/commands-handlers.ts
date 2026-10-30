@@ -298,7 +298,8 @@ export async function handleReview(ctx: ExtensionCommandContext): Promise<void> 
     return;
   }
 
-  const width = Math.max(80, Math.min(200, (process.stdout.columns ?? 120) - 4));
+  // Never wider than the pane: herdr panes are often narrow; the picker stacks there.
+  const width = Math.max(30, Math.min(200, (process.stdout.columns ?? 120) - 2));
   const picked = await ctx.ui.custom<ReviewItem[] | null>(
     (tui, _theme, _kb, done) => new ReviewPicker(items, done, () => tui.requestRender()),
     { overlay: true, overlayOptions: { anchor: "center", width } },

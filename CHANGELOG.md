@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- feat: the `/spai review` picker adapts to the pane width — list and preview
+  side by side from 116 columns, stacked (8 list rows over the preview) below;
+  the overlay is never wider than the pane. Verdicts are read however the
+  agent bolds them (`**Verdikt: x**`, `**Verdikt:** x`, `` `x` ``).
 - fix: `update_spai_status` kept only its own frontmatter keys, so on a Notes
   task it dropped `database_path`, `notes_unid` and the rest — the Notes
   export recognises tasks by `notes_unid` and would have exported them again.

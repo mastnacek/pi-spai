@@ -41,7 +41,8 @@ export function previewText(text: string): string {
 /** `**Verdikt:** zastaralé | …` -> "zastaralé"; "?" when reviewed without one. */
 export function readVerdict(text: string): string | undefined {
   if (!text.includes("## Návrh řešení")) return undefined;
-  return /\*\*Verdikt:\*\*\s*([^\s|*]+)/.exec(text)?.[1] ?? "?";
+  // Tolerant of how agents bold it: `**Verdikt:** x`, `**Verdikt: x**`, `**Verdikt**: x`, `` `x` ``.
+  return /\*{0,2}Verdikt\*{0,2}\s*:\s*\*{0,2}\s*`?(\p{L}+)/u.exec(text)?.[1] ?? "?";
 }
 
 /**

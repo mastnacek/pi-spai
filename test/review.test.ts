@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildReviewBrief, loadReviewItems, readVerdict, requestType } from "../src/review.js";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { ReviewPicker } from "../src/review-picker.js";
 
 function task(id: string, title: string, deadline: string, extra = ""): string {
@@ -28,6 +29,8 @@ test("requestType and readVerdict", () => {
   assert.equal(readVerdict("nic"), undefined);
   assert.equal(readVerdict("## Návrh řešení\n**Verdikt:** zastaralé\n"), "zastaralé");
   assert.equal(readVerdict("## Návrh řešení\n**Příčina:** x"), "?");
+  assert.equal(readVerdict("## Návrh řešení\n**Verdikt: zastaralé**\n"), "zastaralé");
+  assert.equal(readVerdict("## Návrh řešení\n**Verdikt**: `práce`\n"), "práce");
 });
 
 test("loadReviewItems orders IN, SP, ZN, ZOP, oldest first, with verdicts", async () => {
@@ -74,4 +77,37 @@ test("loadReviewItems orders IN, SP, ZN, ZOP, oldest first, with verdicts", asyn
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("picker lays out side by side when wide, stacked when narrow", () => {
+  const item = (id: string, type: string) => ({
+    entry: {
+      id,
+      title: `[${type}-1] Název úkolu`,
+      type: "Todo" as const,
+      status: "todo" as const,
+      symbol: ".",
+      timestamp: "",
+      tags: [],
+      file: `${id}.md`,
+      databasePath: "D:/x/databaze/data__A",
+    },
+    type,
+    preview: `### Popis požadavku\nText úkolu ${id}`,
+  });
+  const items = Array.from({ length: 12 }, (_, i) => item(`SPAI-0${10 + i}`, "SP"));
+  const picker = new ReviewPicker(items, () => {});
+
+  const wide = picker.render(150);
+  assert.ok(wide.every((l) => visibleWidth(l) === 150), "every line exactly the width");
+  assert.ok(wide.some((l) => l.includes("SPAI-010") && l.includes("010 SP")), "list and preview on one row");
+
+  const narrow = picker.render(69);
+  assert.ok(narrow.every((l) => visibleWidth(l) === 69), "narrow lines fit the pane");
+  assert.ok(!narrow.some((l) => l.includes("010 SP") && l.includes("SPAI-010")), "stacked, not side by side");
+  assert.ok(narrow.some((l) => l.includes("Text úkolu SPAI-010")), "preview still shown");
+
+  for (let i = 0; i < 10; i++) picker.move(1); // past the 8 stacked list rows
+  const plain = picker.render(69).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+  assert.ok(plain.some((l) => l.includes("›[ ] 020")), "cursor scrolled into the 8 stacked rows");
 });
