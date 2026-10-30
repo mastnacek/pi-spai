@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- feat: `/spai review` preview renders the task as markdown with pi's own
+  markdown theme (headings, bold, code, lists, links). → (or `l`) opens a
+  reading mode with the whole window for one task: ↑↓ by line, space/PgDn by
+  page, `g` top, `x` select, ← / Esc back. Shift+↑↓ scrolls the preview from
+  the list. Fix: the position hint used to cover the last line of text, so
+  the end of a long task was never visible.
 - feat: the `/spai review` picker adapts to the pane width — list and preview
   side by side from 116 columns, stacked (8 list rows over the preview) below;
   the overlay is never wider than the pane. Verdicts are read however the

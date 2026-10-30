@@ -1,5 +1,7 @@
 import {
   Key,
+  Markdown,
+  type MarkdownTheme,
   matchesKey,
   truncateToWidth,
   visibleWidth,
@@ -36,11 +38,26 @@ export class ReviewPicker {
   private previewRows = SIDE_ROWS;
   readonly selected = new Set<string>();
 
+  /** Rendered preview of the last item/width; markdown rendering is not free. */
+  private bodyCache?: { key: string; lines: string[] };
+
   constructor(
     private readonly items: ReviewItem[],
     private readonly onDone: (picked: ReviewItem[] | null) => void,
     private readonly requestRender: () => void = () => {},
+    /** pi's markdown theme; without it (tests) the preview is plain wrapped text. */
+    private readonly markdownTheme?: MarkdownTheme,
   ) {}
+
+  private previewBody(it: ReviewItem, width: number): string[] {
+    const key = `${it.entry.id}:${width}`;
+    if (this.bodyCache?.key === key) return this.bodyCache.lines;
+    const lines = this.markdownTheme
+      ? new Markdown(it.preview, 0, 0, this.markdownTheme).render(width)
+      : it.preview.split("\n").flatMap((l) => (l.trim() === "" ? [""] : wrapTextWithAnsi(l, width)));
+    this.bodyCache = { key, lines };
+    return lines;
+  }
 
   visible(): ReviewItem[] {
     const f = FILTERS[this.filter];
@@ -94,9 +111,45 @@ export class ReviewPicker {
     if (this.cursor >= this.scroll + this.listRows) this.scroll = this.cursor - this.listRows + 1;
   }
 
-  handleInput(data: string): void {
+  /** Reading mode: the preview takes the whole window, for long tasks. */
+  reading = false;
+
+  private scrollPreview(delta: number): void {
+    this.previewScroll = Math.max(0, this.previewScroll + delta);
+  }
+
+  private handleReadingInput(data: string): void {
     const page = Math.max(1, this.previewRows - 4);
-    if (matchesKey(data, Key.up) || data === "k") this.move(-1);
+    if (matchesKey(data, Key.up) || data === "k") this.scrollPreview(-1);
+    else if (matchesKey(data, Key.down) || data === "j") this.scrollPreview(1);
+    else if (matchesKey(data, Key.pageDown) || matchesKey(data, Key.space) || data === "]")
+      this.scrollPreview(page);
+    else if (matchesKey(data, Key.pageUp) || data === "[") this.scrollPreview(-page);
+    else if (matchesKey(data, Key.home) || data === "g") this.previewScroll = 0;
+    else if (data === "x") this.toggle();
+    else if (
+      matchesKey(data, Key.left) ||
+      matchesKey(data, Key.escape) ||
+      data === "h" ||
+      data === "q"
+    ) {
+      this.reading = false;
+      this.previewScroll = 0;
+    } else return;
+    this.requestRender();
+  }
+
+  handleInput(data: string): void {
+    if (this.reading) {
+      this.handleReadingInput(data);
+      return;
+    }
+    const page = Math.max(1, this.previewRows - 4);
+    if (matchesKey(data, Key.right) || data === "l") {
+      if (this.current()) this.reading = true;
+    } else if (matchesKey(data, Key.shift("down")) || data === "J") this.scrollPreview(1);
+    else if (matchesKey(data, Key.shift("up")) || data === "K") this.scrollPreview(-1);
+    else if (matchesKey(data, Key.up) || data === "k") this.move(-1);
     else if (matchesKey(data, Key.down) || data === "j") this.move(1);
     else if (matchesKey(data, Key.pageDown) || data === "]") this.previewScroll += page;
     else if (matchesKey(data, Key.pageUp) || data === "[")
@@ -144,15 +197,18 @@ export class ReviewPicker {
         (it.verdict ? greenGlow(`  ·  ✓ ${it.verdict}`) : ""),
       violetGlow("─".repeat(width)),
     ].map((h) => fit(h, width));
-    const room = Math.max(1, rows - head.length);
-    const body = it.preview
-      .split("\n")
-      .flatMap((l) => (l.trim() === "" ? [""] : wrapTextWithAnsi(l, width)));
+    const body = this.previewBody(it, width);
+    const overflow = body.length > rows - head.length;
+    // When the text overflows, the last row is the position hint, not text.
+    const room = Math.max(1, rows - head.length - (overflow ? 1 : 0));
     const maxScroll = Math.max(0, body.length - room);
     if (this.previewScroll > maxScroll) this.previewScroll = maxScroll;
     const lines = [...head, ...body.slice(this.previewScroll, this.previewScroll + room)];
-    if (body.length > room) {
-      lines[rows - 1] = violetGlow(`▼ ${this.previewScroll + 1}/${body.length}  PgDn/PgUp`);
+    if (overflow) {
+      while (lines.length < rows - 1) lines.push("");
+      const end = Math.min(body.length, this.previewScroll + room);
+      const hint = this.reading ? "↑↓ / mezerník" : "→ číst celé";
+      lines.push(violetGlow(`▼ řádky ${this.previewScroll + 1}–${end} z ${body.length}  ·  ${hint}`));
     }
     while (lines.length < rows) lines.push("");
     return lines.slice(0, rows).map((l) => fit(l, width));
@@ -177,6 +233,20 @@ export class ReviewPicker {
     const pos = vis.length > this.listRows ? violetGlow(`   ${this.cursor + 1}/${vis.length}`) : "";
 
     let body: string[];
+    if (this.reading) {
+      // Whole window for the text; same height as the list+preview layouts.
+      this.previewRows = sideBySide ? SIDE_ROWS : STACK_LIST_ROWS + 1 + STACK_PREVIEW_ROWS;
+      const it = this.current();
+      const mark = it && this.selected.has(it.entry.id) ? greenGlow("[x] vybráno") : "[ ] nevybráno";
+      return [
+        rule("╭", "╮"),
+        row(`${pinkGlow("◈ Čtení úkolu")}  ${mark}`),
+        row(""),
+        ...this.previewLines(inner, this.previewRows).map(row),
+        row(violetGlow("↑↓ řádek • mezerník/PgDn stránka • g začátek • x vybrat • ← / Esc zpět na seznam")),
+        rule("╰", "╯"),
+      ];
+    }
     if (sideBySide) {
       const listW = Math.floor(inner * 0.45);
       const prevW = inner - listW - 3;
@@ -192,8 +262,8 @@ export class ReviewPicker {
     }
 
     const help = sideBySide
-      ? "↑↓ pohyb • mezerník vybrat • a vše neprohlédnuté • Tab typ • PgDn/PgUp náhled • Enter spustit agenta • Esc zavřít"
-      : "↑↓ • mezerník vybrat • a vše • Tab typ • PgDn/PgUp náhled • Enter spustit • Esc";
+      ? "↑↓ pohyb • → číst celé • mezerník vybrat • a vše neprohlédnuté • Tab typ • Enter spustit agenta • Esc zavřít"
+      : "↑↓ • → číst • mezerník vybrat • a vše • Tab typ • Enter spustit • Esc";
 
     return [
       rule("╭", "╮"),

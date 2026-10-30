@@ -111,3 +111,51 @@ test("picker lays out side by side when wide, stacked when narrow", () => {
   const plain = picker.render(69).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
   assert.ok(plain.some((l) => l.includes("›[ ] 020")), "cursor scrolled into the 8 stacked rows");
 });
+
+test("reading mode shows a long task across the whole window and scrolls", () => {
+  const long = Array.from({ length: 60 }, (_, i) => `řádek ${i + 1}`).join("\n\n");
+  const items = [
+    {
+      entry: {
+        id: "SPAI-001",
+        title: "[SP-1] Dlouhý úkol",
+        type: "Todo" as const,
+        status: "todo" as const,
+        symbol: ".",
+        timestamp: "",
+        tags: [],
+        file: "a.md",
+        databasePath: "D:/x/databaze/data__A",
+      },
+      type: "SP",
+      preview: `### Popis požadavku\n\n**důležité**\n\n${long}`,
+    },
+  ];
+  const tag = (name: string) => (s: string) => `<${name}>${s}</${name}>`;
+  const theme = {
+    heading: tag("h"), link: tag("a"), linkUrl: tag("u"), code: tag("c"), codeBlock: tag("cb"),
+    codeBlockBorder: tag("cbb"), quote: tag("q"), quoteBorder: tag("qb"), hr: tag("hr"),
+    listBullet: tag("li"), bold: tag("b"), italic: tag("i"), strikethrough: tag("s"), underline: tag("un"),
+  };
+  const picker = new ReviewPicker(items, () => {}, () => {}, theme);
+  const plain = (lines: string[]) => lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+
+  const normal = plain(picker.render(69));
+  assert.ok(normal.some((l) => l.includes("<b>důležité</b>")), "markdown is rendered with the theme");
+  assert.ok(normal.some((l) => l.includes("→ číst celé")));
+
+  picker.handleInput("\x1b[C"); // →
+  assert.equal(picker.reading, true);
+  const read = plain(picker.render(69));
+  assert.ok(read.some((l) => l.includes("Čtení úkolu")));
+  const shown = (ls: string[]) => ls.filter((l) => /řádek \d/.test(l)).length;
+  assert.ok(shown(read) > shown(normal) * 2, "much more text than the stacked preview");
+
+  for (let i = 0; i < 200; i++) picker.handleInput(" ");
+  assert.ok(plain(picker.render(69)).some((l) => l.includes("řádek 60")), "can scroll to the end");
+
+  picker.handleInput("x");
+  assert.equal(picker.selected.size, 1);
+  picker.handleInput("\x1b"); // Esc back to the list, not closing
+  assert.equal(picker.reading, false);
+});
