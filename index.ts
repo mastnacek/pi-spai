@@ -9,6 +9,7 @@ import {
   handleList,
   handleNew,
   handleRealize,
+  handleReview,
   handleSearch,
   handleShow,
   handleStatus,
@@ -96,6 +97,9 @@ export default function (pi: ExtensionAPI): void {
         case "realize":
         case "run":
           await handleRealize(remainder, ctx);
+          break;
+        case "review":
+          await handleReview(ctx);
           break;
         case "search":
           await handleSearch(remainder, ctx);

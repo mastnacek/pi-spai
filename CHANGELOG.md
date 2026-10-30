@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- feat: `/spai review` opens a picker of open Notes-database tasks (IN → SP →
+  ZN → ZOP, oldest first, earlier verdicts shown). Ticked tasks go to a pi
+  agent started in a new herdr pane (fallback: the brief goes to the editor),
+  which reviews them with the spai-tasks §11 procedure and lotusscript-modular,
+  records a `**Verdikt:**` (zastaralé / rychlovka / práce), and writes
+  paste-ready `.lss` fixes to `databaze/<db>/01_scripts/` linked as
+  `**Skripty:**`.
 - feat: step plans and Notes-database tasks. Steps are a `- [ ]` / `- [x]`
   checklist under `## Plán` (also `## Plan`, `## Kroky`); nothing outside that
   section counts, so forwarded Notes mail no longer turns into phantom subtasks.

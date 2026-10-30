@@ -40,6 +40,11 @@ export const SUBCOMMANDS = [
     description: "Zkratka pro realize <id>",
   },
   {
+    value: "review",
+    label: "review",
+    description: "Vybrat Notes úkoly k revizi a spustit agenta v novém herdr panelu",
+  },
+  {
     value: "search",
     label: "search <dotaz>",
     description: "Vyhledávat v úkolech, nápadech, štítkách a poznámkách",

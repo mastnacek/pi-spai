@@ -321,6 +321,8 @@ to solve, analyse or plan such an item ("vyřeš SPAI-024"), do this:
 
    ```
    ## Návrh řešení
+   **Verdikt:** zastaralé | rychlovka | práce
+   **Skripty:** <links to paste-ready .lss in databaze/<db>/01_scripts/, if any>
    **Příčina:** <one or two sentences, with `file:line`>
    **Řešení:** <what changes where, and why it fixes the symptom>
    **Jistota:** ověřeno | pravděpodobné | hypotéza — <what confirms it, or what would>
@@ -352,8 +354,20 @@ to solve, analyse or plan such an item ("vyřeš SPAI-024"), do this:
    user to approve. Give LotusScript changes as `.lss` snippets ready to paste
    into Designer. Leave the item's status alone. Notes items close themselves:
    the Notes export agent marks them done when the request is resolved in Notes.
+   **Verdikt** sorts the item for triage: `zastaralé` = already fixed or no
+   longer applies (give the evidence and the text to close it with in Notes);
+   `rychlovka` = 1–3 `(S)` steps; `práce` = real analysis and a plan. ZOP items
+   are the parking lot of IN/SP requests that never burned, so expect many
+   `zastaralé` there — but only with evidence.
 7. **Then report** in the chat: three or four lines with the cause, the
    complexity, the first step, and the open questions.
+
+`/spai review` opens a picker of open Notes items (IN → SP → ZN → ZOP, oldest
+first; reviewed ones show their verdict). The user ticks items, and Enter starts
+a pi agent in a new herdr pane with a brief to run this procedure on them. When
+a fix is concrete LotusScript, that agent also writes a paste-ready
+`databaze/<db>/01_scripts/SPAI-NNN-<name>.lss`, checks it with the
+lotusscript-modular tools, and links it from `## Návrh řešení` as `**Skripty:**`.
 
 When the user later asks you to carry out the plan, work the steps top-down and
 tick each one (§10) as you finish it.

@@ -2,6 +2,15 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { openDirectoryExplorer, openKanbanBoard } from "./commands-explorer.js";
 import { openReaderView } from "./commands-reader.js";
 import {
+  buildReviewBrief,
+  launchReviewAgent,
+  loadReviewItems,
+  type ReviewItem,
+  reviewRoot,
+  writeReviewBrief,
+} from "./review.js";
+import { ReviewPicker } from "./review-picker.js";
+import {
   getOrLoadIndex,
   invalidateCache,
   realizeRecord,
@@ -254,6 +263,7 @@ export function handleHelp(ctx: ExtensionCommandContext): void {
     "- `/spai new <text>` — Rychlý záchyt úkolu, nápadu nebo poznámky se SPAI prefixem.",
     "- `/spai show <id> [--raw]` — Zobrazit detail v čistém režimu čtení (zkratka `r` = realize).",
     "- `/spai toggle <id>` — Přepnout stav úkolu (todo ➔ working ➔ done).",
+    "- `/spai review` — Okno s Notes úkoly: vybrat (mezerník, `a`, Tab = typ) a Enterem spustit revizi agentem v novém herdr panelu.",
     "- `/spai search <dotaz>` — Hledat v úkolech, nápadech a štítcích.",
     "- `/spai status` — Zobrazit statistiky a počty úkolů.",
     "- `/spai help` — Zobrazit tuto nápovědu.",
@@ -274,4 +284,39 @@ export function handleHelp(ctx: ExtensionCommandContext): void {
   ];
 
   ctx.ui.notify(lines.join("\n"), "info");
+}
+
+export async function handleReview(ctx: ExtensionCommandContext): Promise<void> {
+  const root = reviewRoot(ctx.cwd);
+  if (!root) {
+    ctx.ui.notify("Revize: v tomto repozitáři není docs/spai.", "warning");
+    return;
+  }
+  const items = await loadReviewItems(root);
+  if (items.length === 0) {
+    ctx.ui.notify("Revize: žádné otevřené Notes úkoly.", "info");
+    return;
+  }
+
+  const width = Math.max(60, Math.min(140, (process.stdout.columns ?? 120) - 4));
+  const picked = await ctx.ui.custom<ReviewItem[] | null>(
+    (tui, _theme, _kb, done) => new ReviewPicker(items, done, () => tui.requestRender()),
+    { overlay: true, overlayOptions: { anchor: "center", width } },
+  );
+  if (!picked || picked.length === 0) return;
+
+  const tasks = picked.map((p) => p.entry);
+  const briefPath = await writeReviewBrief(buildReviewBrief(root, tasks));
+  const ids = tasks.map((t) => t.id).join(", ");
+  if (process.env.HERDR_ENV !== "1") {
+    ctx.ui.setEditorText(`Přečti zadání revize v souboru ${briefPath} a proveď ho celé.`);
+    ctx.ui.notify(`Revize ${tasks.length} úkolů (${ids}) vložena do promptu – herdr neběží.`, "info");
+    return;
+  }
+  try {
+    const name = await launchReviewAgent(root, briefPath);
+    ctx.ui.notify(`Revize ${tasks.length} úkolů běží v panelu ${pinkGlow(name)}: ${ids}`, "info");
+  } catch (err) {
+    ctx.ui.notify(`Revize: nepodařilo se spustit agenta (${String(err)}). Zadání: ${briefPath}`, "error");
+  }
 }
