@@ -149,5 +149,6 @@ x Fix IPC bridge timeout @pi-spai !high @2026-09-15 :ipc:bug:
 - `facets.project_path` is the **actual directory written to** — the field to
   check when a project token did not resolve (see `projects.md`).
 - `spai_symbol` is empty for `# ` captures, so the key is simply omitted.
-- `.index.json` in the same directory is a derived cache of all items. It is
-  rebuilt by tool-driven writes; a hand edit desynchronizes it (SPAI-004).
+- Written by `spai` (`source: pi` for records created through pi-spai). Besides the keys
+  above it adds `lang`, the Czech `title_cs` and, when offline, `pending`; pi-spai shows
+  `title_cs` when it is there and never edits these keys.

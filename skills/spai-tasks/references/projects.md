@@ -97,11 +97,8 @@ the npm scope stripped (`@scope/pkg` → `pkg`).
 - An **exact file path** is also accepted as the id (absolute, or relative to
   cwd) and bypasses the index lookup entirely.
 
-## Index cache and locking
+## Reading and writing
 
-- `.index.json` in each `docs/spai/` is a derived cache: rebuilt by tool-driven
-  writes, and it is what status counts, the kanban board, search and the status
-  bar read. Hand-editing a markdown file desynchronizes it (SPAI-004).
-- Writes are serialized with a **per-directory lock**, and the index is re-read
-  after acquiring it, so parallel `record_spai_item` calls in one project do not
-  clobber each other or reuse an id (SPAI-002/SPAI-003).
+- pi-spai builds its index in memory from the record files on every read (status
+  counts, kanban board, search, status bar). It writes nothing: records are created
+  and changed only by the `spai` binary, which also owns ids and locking.

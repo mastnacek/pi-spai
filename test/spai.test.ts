@@ -12,7 +12,6 @@ import {
   parseSpai,
   parseSubtasks,
   stripSpaiPrefix,
-  updateBodyStatusPrefix,
 } from "../src/spai.js";
 
 test("matchSpaiPrefix parses standard SPAI table", () => {
@@ -166,23 +165,4 @@ test("cycleNextStatus cycles through all states in order", () => {
 
   assert.equal(cycleNextStatus("idea", "Idea"), "todo");
   assert.equal(cycleNextStatus("note", "Note"), "todo");
-});
-
-test("updateBodyStatusPrefix updates leading SPAI line prefix", () => {
-  const original = ". Implementovat feature";
-  const working = updateBodyStatusPrefix(original, "working");
-  assert.equal(working.symbol, "/");
-  assert.equal(working.body, "/ Implementovat feature");
-
-  const waiting = updateBodyStatusPrefix(working.body, "waiting");
-  assert.equal(waiting.symbol, "/.");
-  assert.equal(waiting.body, "/. Implementovat feature");
-
-  const done = updateBodyStatusPrefix(waiting.body, "done");
-  assert.equal(done.symbol, "x");
-  assert.equal(done.body, "x Implementovat feature");
-
-  const cancelled = updateBodyStatusPrefix(done.body, "cancelled");
-  assert.equal(cancelled.symbol, "z");
-  assert.equal(cancelled.body, "z Implementovat feature");
 });

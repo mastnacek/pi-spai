@@ -1,3 +1,4 @@
+import { displayTitle } from "./storage-format.js";
 /**
  * The narrow single-column view (below 75 columns), with its tab strip.
  * Split out of `kanban.ts`; takes an explicit `KanbanView`.
@@ -130,7 +131,7 @@ export function renderNarrow(view: KanbanView, width: number) : string[] {
             4,
             innerWidth - visibleWidth(prefix) - id.length - metaW - 2,
           );
-          const truncatedTitle = truncateToWidth(task.title, availTitle, "…");
+          const truncatedTitle = truncateToWidth(displayTitle(task), availTitle, "…");
           const leftPart = `${prefix}${id} ${truncatedTitle}`;
           const spaces = Math.max(
             1,
@@ -146,7 +147,7 @@ export function renderNarrow(view: KanbanView, width: number) : string[] {
             4,
             innerWidth - visibleWidth(prefix) - id.length - metaW - 2,
           );
-          const truncatedTitle = truncateToWidth(task.title, availTitle, "…");
+          const truncatedTitle = truncateToWidth(displayTitle(task), availTitle, "…");
           const leftPart = `${prefix}${styledId} ${truncatedTitle}`;
           const spaces = Math.max(
             1,
@@ -171,7 +172,7 @@ export function renderNarrow(view: KanbanView, width: number) : string[] {
   let footerDetail: string;
   if (selectedTask) {
     const idStr = pinkGlow(selectedTask.id);
-    const titleStr = defaultBold(selectedTask.title);
+    const titleStr = defaultBold(displayTitle(selectedTask));
     const statusBadge = colBadge(selectedTask.status);
     const prioStr =
       selectedTask.priority === "high"

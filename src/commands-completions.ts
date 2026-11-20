@@ -1,3 +1,4 @@
+import { displayTitle } from "./storage-format.js";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { getSpaiNewCompletions } from "./autocomplete.js";
 import { loadAvailableProjects, loadProjectsConfig } from "./projects.js";
@@ -173,11 +174,11 @@ export async function getCompletions(
             (r) =>
               !query ||
               r.id.toLowerCase().includes(query) ||
-              r.title.toLowerCase().includes(query),
+              displayTitle(r).toLowerCase().includes(query),
           )
           .map((r) => ({
             value: `${cmd} ${r.id}`,
-            label: `${r.id} — ${r.title}`,
+            label: `${r.id} — ${displayTitle(r)}`,
             description: `[${r.type} - ${r.status}]`,
           }));
         const filtered = items.filter((i) =>
@@ -197,7 +198,7 @@ export async function getCompletions(
           const query = tokens[1].toLowerCase();
           const items = index.records.map((r) => ({
             value: `toggle ${r.id} `,
-            label: `${r.id} — ${r.title}`,
+            label: `${r.id} — ${displayTitle(r)}`,
             description: `[${r.type} - ${r.status}]`,
           }));
           const filtered = items.filter(

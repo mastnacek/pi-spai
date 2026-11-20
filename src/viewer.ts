@@ -1,3 +1,4 @@
+import { displayTitle } from "./storage-format.js";
 // Renderers: badges, reading mode, highlighting and directory views.
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 
@@ -138,7 +139,7 @@ export function formatReadingMode(
   const pipe = pinkGlow("│");
 
   const lines = [
-    t.bold(pinkGlow(`◈ ${record.id}: ${record.title.toUpperCase()}`)),
+    t.bold(pinkGlow(`◈ ${record.id}: ${displayTitle(record).toUpperCase()}`)),
     divider,
     `  ${violetGlow("Typ:")}         ${renderSpaiTypeBadge(record.type)}  ${renderSpaiStatusBadge(record.status)}`,
     `  ${violetGlow("Vytvořeno:")}   ${t.fg("dim", record.timestamp)}`,
@@ -339,7 +340,7 @@ export function renderDirectoryTable(
       const tagsStr =
         r.tags.length > 0 ? ` ${violetGlow(`:${r.tags.join(":")}:`)}` : "";
       const truncatedTitle =
-        r.title.length > 28 ? `${r.title.slice(0, 25)}...` : r.title;
+        displayTitle(r).length > 28 ? `${displayTitle(r).slice(0, 25)}...` : displayTitle(r);
       const titleCol = `${truncatedTitle}${tagsStr}`.padEnd(34);
 
       lines.push(`│ ${idCol} │ ${statusCol} │ ${typeCol} │ ${titleCol} │`);

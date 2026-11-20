@@ -29,6 +29,7 @@ export async function scanProjectSpai(
           entries.push({
             id: parsed.id,
             title: parsed.title,
+            titleCs: parsed.titleCs,
             type: parsed.type,
             status: parsed.status,
             symbol: parsed.symbol,

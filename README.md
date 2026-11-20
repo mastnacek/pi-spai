@@ -4,7 +4,6 @@
 
 ```text
 docs/spai/
-├── .index.json                 # Lightweight fast index (status, tags, deadlines)
 ├── 2026-08-27-SPAI-001-*.md    # SPAI Markdown note with YAML frontmatter
 └── 2026-08-27-SPAI-002-*.md
 ```
@@ -51,8 +50,20 @@ The first non-empty line determines the **type** and **status** of the item:
 
 ### Autonomous Agent Tools (`LLM-Callable`)
 
-- `record_spai_item({ text })` — Allows the agent to record project tasks and ideas directly into `docs/spai/`.
+- `record_spai_item({ text, project?, force? })` — Records a task, idea or note through the `spai` binary. A similar record stops the write and returns the candidates; `force` only on the user's explicit wish.
+- `similar_spai_items({ text })` — Finds duplicates and related records; writes nothing.
+- `update_spai_status({ id, status })` — Changes the status through `spai set`.
 - `search_spai_items({ query, status? })` — Allows the agent to query the project task backlog.
+
+---
+
+## 🔧 Requires the `spai` binary
+
+pi-spai only **reads** `docs/spai/`. Records are written and their status is changed by the
+`spai` CLI (ids, English storage, Czech `title_cs`, vectors, duplicate check). It is found via
+`SPAI_BIN`, `PATH`, then `~/.cargo/bin`; without it the writing tools fail with
+"spai nenalezen — `cargo install --path cli` v repu spai nebo SPAI_BIN". Lists, board and
+viewer show `title_cs` when a record has one.
 
 ---
 

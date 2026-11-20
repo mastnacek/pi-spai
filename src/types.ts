@@ -46,6 +46,8 @@ export interface Subtask {
 export interface SpaiRecord {
  id: string;
  title: string;
+ /** Czech display title (frontmatter `title_cs`) when `spai` has translated the record. */
+ titleCs?: string;
  type: SpaiNoteType;
  status: SpaiStatus;
  symbol: string;
@@ -68,6 +70,7 @@ export interface SpaiRecord {
 export interface SpaiIndexEntry {
  id: string;
  title: string;
+ titleCs?: string;
  type: SpaiNoteType;
  status: SpaiStatus;
  symbol: string;

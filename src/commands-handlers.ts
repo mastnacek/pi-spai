@@ -1,3 +1,4 @@
+import { displayTitle } from "./storage-format.js";
 import { type ExtensionCommandContext, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { openDirectoryExplorer, openKanbanBoard } from "./commands-explorer.js";
 import { openReaderView } from "./commands-reader.js";
@@ -17,8 +18,8 @@ import {
   updateStatusBar,
 } from "./session-state.js";
 import { cycleNextStatus } from "./spai.js";
+import { describeDuplicates, describeHit, describeWritten } from "./spai-cli.js";
 import {
-  getIndexPath,
   getSpaiDir,
   readRecord,
   saveRecord,
@@ -74,15 +75,28 @@ export async function handleNew(
     }
   }
 
-  const saved = await saveRecord(ctx.cwd, text);
+  let saved = await saveRecord(ctx.cwd, text);
+  if (!saved.written) {
+    // The user is at the keyboard: they decide whether the duplicate is a duplicate.
+    const list = saved.duplicates.map(describeHit).join("\n");
+    const again = await ctx.ui.confirm(
+      "Podobný záznam už existuje",
+      `${list}\n\nZapsat přesto?`,
+    );
+    if (!again) {
+      ctx.ui.notify(describeDuplicates(saved).split("\n")[0] ?? "Nic nezapsáno.", "warning");
+      return;
+    }
+    saved = await saveRecord(ctx.cwd, text, undefined, true);
+    if (!saved.written) {
+      ctx.ui.notify("Zápis se nepovedl.", "error");
+      return;
+    }
+  }
   invalidateCache();
   await updateStatusBar(ctx);
 
-  const targetInfo = saved.project ? ` v [${saved.project}]` : "";
-  ctx.ui.notify(
-    `Vytvořeno${targetInfo}: ${pinkGlow(saved.id)}: ${saved.title} [${saved.type} - ${saved.status}]\nUloženo do ${saved.file}`,
-    "info",
-  );
+  ctx.ui.notify(`Vytvořeno: ${pinkGlow(saved.id)}\n${describeWritten(saved)}`, "info");
 }
 
 export async function handleShow(
@@ -205,7 +219,7 @@ export async function handleSearch(
     const statusBadge = renderSpaiStatusBadge(m.status);
     const typeBadge = renderSpaiTypeBadge(m.type);
     lines.push(
-      `- **${m.id}** ${typeBadge} ${statusBadge} (${m.timestamp}): **${m.title}**`,
+      `- **${m.id}** ${typeBadge} ${statusBadge} (${m.timestamp}): **${displayTitle(m)}**`,
     );
   }
 
@@ -215,7 +229,6 @@ export async function handleSearch(
 export async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
   const index = await getOrLoadIndex(ctx.cwd);
   const spaiDir = getSpaiDir(ctx.cwd);
-  const indexPath = getIndexPath(ctx.cwd);
   const counts = getStatusCounts(index);
   const ribbon = renderSpaiRibbon(counts, 28);
 
@@ -233,7 +246,6 @@ export async function handleStatus(ctx: ExtensionCommandContext): Promise<void> 
   const lines = [
     "# Stav pi-spai Ledgeru",
     `- **Složka:** ${spaiDir}`,
-    `- **Index:** ${indexPath}`,
     `- **Ribbon:** ${ribbon}`,
     `- **Statusline:** ${statusDashboard}`,
     `- **Celkem položek:** ${index.records.length}`,

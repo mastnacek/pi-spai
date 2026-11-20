@@ -11,18 +11,12 @@ import {
   cycleNextStatus,
   formatSpaiLine,
   getStatusGlyph,
-  getStatusPrefix,
-  toggleSubtaskDone,
-  updateBodyStatusPrefix,
 } from "./spai-status.js";
 
 export {
   cycleNextStatus,
   formatSpaiLine,
   getStatusGlyph,
-  getStatusPrefix,
-  toggleSubtaskDone,
-  updateBodyStatusPrefix,
 };
 
 /**

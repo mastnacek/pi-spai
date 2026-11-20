@@ -1,3 +1,4 @@
+import { displayTitle } from "./storage-format.js";
 /**
  * The wide board grid and the project-picker overlay.
  * Split out of `kanban.ts`; both take an explicit `KanbanView`.
@@ -165,7 +166,7 @@ export function renderWide(view: KanbanView, width: number) : string[] {
         const id = task.id.replace(/^SPAI-0*/i, "#");
         const availWidth = Math.max(8, w - 3);
         const steps = task.steps ? ` [${task.steps.done}/${task.steps.total}]` : "";
-        const rawContent = `${id}${steps} ${task.title}${prioMark ? " " + prioMark : ""}`;
+        const rawContent = `${id}${steps} ${displayTitle(task)}${prioMark ? " " + prioMark : ""}`;
         const truncatedContent = truncateToWidth(rawContent, availWidth, "…");
 
         let cellText: string;
@@ -174,12 +175,12 @@ export function renderWide(view: KanbanView, width: number) : string[] {
           cellText = ` ▸${highlighted}`;
         } else {
           const styledId = col.colorFn(id);
-          const displayTitle = task.title.slice(
+          const shown = displayTitle(task).slice(
             0,
             Math.max(4, availWidth - id.length - 1),
           );
           const styledPrio = prioMark ? coralGlow(` ${prioMark}`) : "";
-          cellText = `   ${styledId} ${displayTitle}${styledPrio}`;
+          cellText = `   ${styledId} ${shown}${styledPrio}`;
         }
         rowSegments.push(padToWidth(cellText, w));
       } else if (r === 0 && tasks.length === 0) {
@@ -203,7 +204,7 @@ export function renderWide(view: KanbanView, width: number) : string[] {
   let footerDetail: string;
   if (selectedTask) {
     const idStr = pinkGlow(selectedTask.id);
-    const titleStr = defaultBold(selectedTask.title);
+    const titleStr = defaultBold(displayTitle(selectedTask));
     const statusBadge = colBadge(selectedTask.status);
     const prioStr =
       selectedTask.priority === "high"

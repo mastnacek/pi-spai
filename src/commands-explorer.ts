@@ -1,3 +1,4 @@
+import { displayTitle } from "./storage-format.js";
 import {
   DynamicBorder,
   type ExtensionCommandContext,
@@ -91,7 +92,7 @@ export async function openDirectoryExplorer(
           const stepsStr = r.steps ? ` [${r.steps.done}/${r.steps.total}]` : "";
           return {
             value: r.filePath || r.file,
-            label: `${pinkGlow(r.id)} ${typeBadge} ${statusBadge}${stepsStr} ${r.title}${prioStr}${deadStr}`,
+            label: `${pinkGlow(r.id)} ${typeBadge} ${statusBadge}${stepsStr} ${displayTitle(r)}${prioStr}${deadStr}`,
             description: `${r.timestamp}${tagsStr}`,
           };
         });

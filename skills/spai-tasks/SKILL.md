@@ -5,19 +5,35 @@ description: "Compose SPAI syntax and manage SPAI task/idea/note lifecycle (todo
 
 # SPAI Task & Project Lifecycle
 
-SPAI items live in `<project>/docs/spai/` as one markdown file per item, plus a
-`.index.json`. The item's first non-empty line is parsed for its **prefix**; inline
+SPAI items live in `<project>/docs/spai/` as one markdown file per item. The item's first non-empty line is parsed for its **prefix**; inline
 metadata (`@project`, `!priority`, `@deadline`, `:tags:`) is parsed from the whole
 text. The record's own markdown layout is documented in
 `references/syntax.md`.
 
-Three tools create items and change their status. Body text such as the proposal or the plan is a plain file edit (§7, §10–11).
+**Records are written only by the `spai` binary, and these tools call it.** Never create a
+record file, never change `status`, `type`, the first-line prefix or the frontmatter of
+one by hand. IDs, translation (`title_cs`), vectors and the duplicate check across all
+projects are `spai`'s job. The only hand edit left is the body text of an existing item:
+the proposal and the plan of a Notes task (§7, §10–11).
+
+Write the item text in **English**; `spai` adds the Czech `title_cs` itself. Keep the
+title to one short sentence and put details in the body.
 
 | Tool | Purpose |
 | --- | --- |
-| `record_spai_item { text, project? }` | Create an item |
-| `update_spai_status { id, status }` | Move an item through its lifecycle |
+| `similar_spai_items { text }` | Find duplicates and related items. Nothing is written |
+| `record_spai_item { text, project?, force? }` | Create an item (`spai add`) |
+| `update_spai_status { id, status }` | Move an item through its lifecycle (`spai set`) |
 | `search_spai_items { query, status?, project? }` | Find items |
+
+**Before proposing a new item, call `similar_spai_items`.** Put any duplicate or related item
+(`SPAI-012 @pi-uma 91 % — title`) into the proposal and write only after the user agrees.
+If `record_spai_item` answers "Nic nezapsáno: podobný záznam už existuje", nothing was
+written: show the candidates (project, ID, title, score) to the user and let them decide.
+Pass `force: true` only when the user explicitly asks to write despite the duplicate.
+Without a network `spai` still writes, with pending work (`translate_cs`, `embed`) that
+`spai reindex` fills in later; say so in one sentence. If `spai` is not installed the tools
+fail with "spai nenalezen" — tell the user, do not write the file yourself.
 
 ---
 
@@ -99,8 +115,8 @@ but only when it resolves to a directory that exists. Resolution
 2. `<cwd>/<identifier>` existing as a directory,
 3. an **absolute or cwd-relative path** that exists,
 4. a path-like suffix match, then a workspace subproject scan,
-5. otherwise `{ name }` with **no path** — the token is kept as a *label* and the
-   record **silently stays in the cwd backlog**.
+5. otherwise `{ name }` with **no path** — the token stays in the text and `spai`
+   rejects it ("unknown project @…"). Nothing is written.
 
 Practical consequences:
 
@@ -109,13 +125,13 @@ Practical consequences:
   (`@pi-spai`), never the container (`@plugins`).
 - Name has spaces → quote it: `@"my project"`.
 - **The tool's `project` argument is only a fallback** (used when the inline token
-  is absent). Pass the same value in both so label and location agree.
+  is absent). Pass the same value in both. The resolved folder goes to `spai` as
+  `--project`, and the `@` token is dropped from the stored text.
 - Targeting a project that may not be registered? Write the **absolute path**
   (`@D:/01_programovani/pi/plugins/pi-spai`). Step 3 pins the destination
   deterministically; it is noisier, but silence is worse.
-- **Unmatched names do not fail.** You get `project: pi-orchestrator` in
-  frontmatter with `project_path: <the cwd you were in>` — a misplacement that
-  only shows up much later. Verify per §6.
+- **Unmatched names fail loudly.** `spai` answers "unknown project @pi-orchestrator"
+  and writes nothing; fix the token or use the absolute path.
 
 `@` is overloaded; dates are never projects:
 
@@ -192,14 +208,8 @@ record_spai_item({
 4. Tags `:tag:`-shaped, whitespace-delimited, lowercase ASCII?
 5. No second `@project` or `!` token?
 
-**After recording — verify the destination.** The tool's response text contains
-only the **file name**, not the directory, so a silently unresolved `@project`
-is invisible there. Confirm placement by one of:
-
-- pass an absolute path token in the first place (deterministic), or
-- read the created file and check `facets.project_path`, or
-- `search_spai_items { query: "<title fragment>", project: "<intended>" }` and
-  confirm the id comes back.
+**After recording** the response names the project and the absolute path of the file
+`spai` wrote. Confirm in one line to the user: `SPAI-007 @project — <title>`.
 
 ---
 
@@ -213,8 +223,8 @@ update_spai_status({ "id": "SPAI-001", "status": "done" })
 
 Accepted statuses: `todo`, `working`, `waiting`, `done`, `cancelled`, `idea`,
 `note`. Mark `working` when you **start**, `done` only after the work is written,
-verified and tests pass. Tool-driven updates refresh the markdown file,
-`.index.json`, the kanban board and status bar together.
+verified and tests pass. The change is made by `spai set`; the board and status bar
+read the files again afterwards.
 
 The `id` may be bare (`SPAI-001`), an **exact file path**, or **project-qualified**
 when the same id exists in more than one backlog:
@@ -226,12 +236,10 @@ update_spai_status({ "id": "SPAI-013 @pi-uma", "status": "done" })
 A bare id is resolved against the git worktree; a genuine collision raises an
 error instead of silently picking one (`references/projects.md` § ID namespaces).
 
-**Status goes through the tool, body text may be edited.** The index heals itself:
-any `.md` newer than `.index.json` triggers a rebuild on the next read (SPAI-004).
-So editing the body — writing `## Návrh řešení`, the `## Plán` checklist, ticking
-`- [x]` — is a plain file edit. Change the **status** only through
-`update_spai_status`, because it rewrites the frontmatter, the first-line prefix
-and the index consistently.
+**Status goes through the tool, body text may be edited.** Writing
+`## Návrh řešení`, the `## Plán` checklist, ticking `- [x]` is a plain file edit of
+the body. Change the **status** only through `update_spai_status`, because `spai set`
+rewrites the frontmatter and the first-line prefix consistently.
 
 ---
 

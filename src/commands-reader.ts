@@ -1,3 +1,4 @@
+import { displayTitle } from "./storage-format.js";
 import {
   DynamicBorder,
   type ExtensionCommandContext,
@@ -45,7 +46,7 @@ export async function openReaderView(
         ? greenGlow("[● Čtení (SPAI)]")
         : goldGlow("[⚡ Surový Markdown]");
 
-      const titleLine = `${pinkGlow(theme.bold(`◈ ${currentRecord.id}: ${currentRecord.title}`))}  ${modeBadge}`;
+      const titleLine = `${pinkGlow(theme.bold(`◈ ${currentRecord.id}: ${displayTitle(currentRecord)}`))}  ${modeBadge}`;
       container.addChild(new Text(titleLine, 1, 0));
       container.addChild(new Spacer(1));
 

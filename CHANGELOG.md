@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- refactor: records are written and their status changed only by the `spai`
+  binary (`src/spai-cli.ts`: `execFile`, no shell, `--json`, found via
+  `SPAI_BIN`, `PATH`, `~/.cargo/bin`). `record_spai_item` and `/spai new` call
+  `spai add --source pi`; a duplicate (exit code 3) writes nothing and returns
+  the candidates — the tool takes `force` only on the user's explicit wish, the
+  command asks. `update_spai_status`, `/spai toggle`, the board and the reader
+  call `spai set`. A missing binary fails with "spai nenalezen".
+- feat: `similar_spai_items` tool (`spai similar`); the lists, board, reader and
+  search show the Czech `title_cs` when a record has it.
+- removed: own id allocation, record/frontmatter writing, per-directory lock,
+  atomic write queue, `.index.json` reading and writing (the index is built in
+  memory from the files), `updateBodyStatusPrefix` and friends. A missing
+  `@project` now makes `spai` fail instead of landing in the cwd backlog.
+
 - feat: in the `/spai review` picker a reviewed task's preview leads with
   `## Návrh řešení` (verdict, cause, plan) and the request follows under
   `## Zadání`; the review mark in the list is spaced (`[ ] ✓ 003`).

@@ -4,20 +4,18 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  loadIndex,
-  readRecord,
-  saveRecord,
-  searchRecords,
-  updateRecordStatus,
-} from "../src/storage.js";
+import { searchRecords, updateRecordStatus } from "../src/storage.js";
+import { setRunner } from "../src/spai-cli.js";
+import { fakeSpai } from "./fake-spai.js";
 import { normalizePath } from "../src/projects.js";
+
+// The real `spai` binary is replaced by a stand-in that edits the status line.
+setRunner(fakeSpai().runner);
 
 interface SeedRecord {
   id: string;
@@ -41,36 +39,13 @@ async function seedProject(
 ): Promise<string> {
   const spaiDir = join(dir, "docs", "spai");
   await mkdir(spaiDir, { recursive: true });
-  const entries = [];
   for (const r of records) {
-    const file = `${r.id}.md`;
     await writeFile(
-      join(spaiDir, file),
+      join(spaiDir, `${r.id}.md`),
       recordMarkdown(r.id, r.title, r.status, name),
       "utf8",
     );
-    entries.push({
-      id: r.id,
-      title: r.title,
-      type: "Todo",
-      status: r.status,
-      symbol: ".",
-      timestamp: "2026-09-25 10:00:00",
-      tags: [],
-      project: name,
-      projectPath: dir.replace(/\\/g, "/"),
-      file,
-    });
   }
-  await writeFile(
-    join(spaiDir, ".index.json"),
-    JSON.stringify(
-      { version: 1, lastUpdated: "2026-09-25 10:00:00", records: entries },
-      null,
-      2,
-    ) + "\n",
-    "utf8",
-  );
   return spaiDir;
 }
 
@@ -256,82 +231,6 @@ test("searchRecords honours the project filter for an exact id", async () => {
     assert.equal(matches[0]?.id, "SPAI-013");
   } finally {
     await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("parallel saveRecord calls get distinct ids and one consistent index", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-spai-parallel-"));
-  try {
-    const results = await Promise.all(
-      Array.from({ length: 4 }, (_, i) =>
-        saveRecord(dir, `. Parallel ${i} :test:`, "docs/spai"),
-      ),
-    );
-    const ids = results.map((r) => r.id).sort();
-    assert.deepEqual(ids, ["SPAI-001", "SPAI-002", "SPAI-003", "SPAI-004"]);
-
-    const index = await loadIndex(dir, "docs/spai");
-    assert.equal(index.records.length, 4);
-
-    const files = (await readdir(join(dir, "docs", "spai"))).filter((f) =>
-      f.endsWith(".md"),
-    );
-    assert.equal(files.length, 4);
-
-    const readBack = await Promise.all(
-      ids.map((id) => readRecord(dir, id, "docs/spai")),
-    );
-    assert.equal(readBack.filter(Boolean).length, 4);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("eight parallel saveRecord calls stay consistent", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-spai-parallel8-"));
-  try {
-    const results = await Promise.all(
-      Array.from({ length: 8 }, (_, i) =>
-        saveRecord(dir, `. Parallel eight ${i} :test:`, "docs/spai"),
-      ),
-    );
-    const ids = results.map((r) => r.id).sort();
-    assert.deepEqual(ids, [
-      "SPAI-001",
-      "SPAI-002",
-      "SPAI-003",
-      "SPAI-004",
-      "SPAI-005",
-      "SPAI-006",
-      "SPAI-007",
-      "SPAI-008",
-    ]);
-
-    const index = await loadIndex(dir, "docs/spai");
-    assert.equal(index.records.length, 8);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("interleaved saveRecord and updateRecordStatus keep the index consistent", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-spai-interleaved-"));
-  try {
-    const first = await saveRecord(dir, ". First task :test:", "docs/spai");
-
-    const [, updated] = await Promise.all([
-      saveRecord(dir, ". Second task :test:", "docs/spai"),
-      updateRecordStatus(dir, first.id, "done", "docs/spai"),
-    ]);
-    assert.equal(updated?.status, "done");
-
-    const index = await loadIndex(dir, "docs/spai");
-    assert.equal(index.records.length, 2);
-    const firstEntry = index.records.find((r) => r.id === first.id);
-    assert.equal(firstEntry?.status, "done");
-    assert.ok(index.records.some((r) => r.id !== first.id));
-  } finally {
-    await rm(dir, { recursive: true, force: true });
   }
 });
 
